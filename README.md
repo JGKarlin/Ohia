@@ -18,8 +18,6 @@ Everything runs on the Mac, and no mail is sent to a cloud AI service. Ohia is a
 
 Ohia is named after the ʻōhiʻa lehua, a tree native to Hawaiʻi. The name continues a lineage of Unix mail programs named after trees, Elm and Pine among them, and the ʻōhiʻa's star-shaped blossom suggested the app's picture of messages as points of light in a semantic space.
 
-Ohia was created by [Jason Karlin](https://github.com/JGKarlin). He conceived, designed and directed the project and reviewed its development. Most of the implementation was written with AI coding agents, chiefly Anthropic's Claude Code and OpenAI's Codex, working under his direction. That is stated here because it bears on the project's subject: Ohia is both a study of what AI models can do with personal email and a product of AI-assisted software development.
-
 ## What it does
 
 - **Mail over IMAP and SMTP.** Ohia downloads your mail over IMAP and keeps it in a local store. Reading and analysis never change your mailbox; Ohia writes to it only when you act: sending, saving drafts, filing, flagging or deleting. Outgoing mail goes through an outbox with retries.
