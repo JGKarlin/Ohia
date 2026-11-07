@@ -1,0 +1,23 @@
+Ohia
+Copyright 2026 Jason G. Karlin
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+It includes third-party software, listed with its licenses in
+THIRD-PARTY-NOTICES.txt, including:
+
+- MLX Swift and MLX Swift LM (MIT), https://github.com/ml-explore/mlx-swift
+- swift-transformers (Apache-2.0), Hugging Face
+- SwiftNIO and swift-nio-imap (Apache-2.0), Apple Inc.
+- USearch (Apache-2.0), Unum Cloud
+- LiteParse (Apache-2.0), LlamaIndex
+- PDFium (BSD-3-Clause), The PDFium Authors
+- Node.js (MIT), OpenJS Foundation and Node.js contributors
+- Material Design Icons brand glyphs (Apache-2.0), Pictogrammers
+
+Gmail, Outlook, Yahoo and iCloud are trademarks of their respective owners;
+their glyphs identify account providers and imply no endorsement.
+
+The notification sounds in the released app are licensed for use in the app
+only. They are not part of the source distribution and are not covered by the
+Apache License.

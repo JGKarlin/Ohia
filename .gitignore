@@ -1,0 +1,10 @@
+.DS_Store
+.build/
+build/
+xcuserdata/
+DerivedData/
+.swiftpm/
+*.profraw
+*.profdata
+# Installed by tools/fetch-liteparse-node.sh
+Vendor/LiteParseHelper/node/bin/node

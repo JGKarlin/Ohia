@@ -1,0 +1,8 @@
+{
+  "private": true,
+  "description": "Bundled LiteParse helper payload for Ohia. Apple Silicon only.",
+  "dependencies": {
+    "@llamaindex/liteparse": "2.0.5",
+    "@llamaindex/liteparse-darwin-arm64": "2.0.5"
+  }
+}

@@ -1,0 +1,609 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		8C3D61722F8FA18B00C04BE1 /* OhiaCore in Frameworks */ = {isa = PBXBuildFile; productRef = 8C3D61712F8FA18B00C04BE1 /* OhiaCore */; };
+		8C3D61742F8FA18B00C04BE1 /* OhiaIngest in Frameworks */ = {isa = PBXBuildFile; productRef = 8C3D61732F8FA18B00C04BE1 /* OhiaIngest */; };
+		8C3D61762F8FA18B00C04BE1 /* OhiaML in Frameworks */ = {isa = PBXBuildFile; productRef = 8C3D61752F8FA18B00C04BE1 /* OhiaML */; };
+		8C3D61782F8FA18B00C04BE1 /* OhiaScheduler in Frameworks */ = {isa = PBXBuildFile; productRef = 8C3D61772F8FA18B00C04BE1 /* OhiaScheduler */; };
+		8C3D617A2F8FA18B00C04BE1 /* OhiaMessagesReaderProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 8C3D61792F8FA18B00C04BE1 /* OhiaMessagesReaderProtocol */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		8C9136612F8F9D9300CD3696 /* Ohia.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ohia.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		8C5722C92F9A538D00931843 /* Exceptions for "Ohia" folder in "Ohia" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 8C9136602F8F9D9300CD3696 /* Ohia */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		8C9136632F8F9D9300CD3696 /* Ohia */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				8C5722C92F9A538D00931843 /* Exceptions for "Ohia" folder in "Ohia" target */,
+			);
+			path = Ohia;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		8C91365E2F8F9D9300CD3696 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8C3D61722F8FA18B00C04BE1 /* OhiaCore in Frameworks */,
+				8C3D61782F8FA18B00C04BE1 /* OhiaScheduler in Frameworks */,
+				8C3D61742F8FA18B00C04BE1 /* OhiaIngest in Frameworks */,
+				8C3D61762F8FA18B00C04BE1 /* OhiaML in Frameworks */,
+				8C3D617A2F8FA18B00C04BE1 /* OhiaMessagesReaderProtocol in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		8C3D61702F8FA18B00C04BE1 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
+		8C9136582F8F9D9300CD3696 = {
+			isa = PBXGroup;
+			children = (
+				8C9136632F8F9D9300CD3696 /* Ohia */,
+				8C3D61702F8FA18B00C04BE1 /* Frameworks */,
+				8C9136622F8F9D9300CD3696 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		8C9136622F8F9D9300CD3696 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				8C9136612F8F9D9300CD3696 /* Ohia.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		8C9136602F8F9D9300CD3696 /* Ohia */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8C91366C2F8F9D9400CD3696 /* Build configuration list for PBXNativeTarget "Ohia" */;
+			buildPhases = (
+				8C4F0A6A2F9D6C24003D18A1 /* Create CNumKong Header-Only Object */,
+				8C2B6E102FA2D00000B3E301 /* Copy Bundled ML Models */,
+				8C91365D2F8F9D9300CD3696 /* Sources */,
+				8C91365E2F8F9D9300CD3696 /* Frameworks */,
+				8C91365F2F8F9D9300CD3696 /* Resources */,
+				8C7A0B132FA7000000F00D04 /* Register Google OAuth Redirect Scheme */,
+				8C7A0B112FA7000000F00D02 /* Copy LiteParse Helper */,
+				8C7A0B122FA7000000F00D03 /* Build Worker Helpers with Xcode */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				8C9136632F8F9D9300CD3696 /* Ohia */,
+			);
+			name = Ohia;
+			packageProductDependencies = (
+				8C3D61712F8FA18B00C04BE1 /* OhiaCore */,
+				8C3D61732F8FA18B00C04BE1 /* OhiaIngest */,
+				8C3D61752F8FA18B00C04BE1 /* OhiaML */,
+				8C3D61772F8FA18B00C04BE1 /* OhiaScheduler */,
+				8C3D61792F8FA18B00C04BE1 /* OhiaMessagesReaderProtocol */,
+			);
+			productName = Ohia;
+			productReference = 8C9136612F8F9D9300CD3696 /* Ohia.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		8C9136592F8F9D9300CD3696 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2640;
+				LastUpgradeCheck = 2660;
+				TargetAttributes = {
+					8C9136602F8F9D9300CD3696 = {
+						CreatedOnToolsVersion = 26.4;
+					};
+				};
+			};
+			buildConfigurationList = 8C91365C2F8F9D9300CD3696 /* Build configuration list for PBXProject "Ohia" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 8C9136582F8F9D9300CD3696;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				8C3D616F2F8FA11F00C04BE1 /* XCLocalSwiftPackageReference "Packages" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 8C9136622F8F9D9300CD3696 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				8C9136602F8F9D9300CD3696 /* Ohia */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		8C91365F2F8F9D9300CD3696 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		8C7A0B132FA7000000F00D04 /* Register Google OAuth Redirect Scheme */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Ohia/Configuration.plist",
+				"$(TARGET_BUILD_DIR)/$(INFOPLIST_PATH)",
+			);
+			name = "Register Google OAuth Redirect Scheme";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\n# Google's OAuth redirect is the reversed client ID, so its URL scheme is\n# registered from Ohia/Configuration.plist at build time. A build without a\n# Google client ID registers no Google scheme.\ninfo=\"$TARGET_BUILD_DIR/$INFOPLIST_PATH\"\nclient_id=$(/usr/libexec/PlistBuddy -c \"Print :OHIA_GOOGLE_OAUTH_CLIENT_ID\" \"$SRCROOT/Ohia/Configuration.plist\" 2>/dev/null || true)\nif [ -z \"$client_id\" ]; then\n    exit 0\nfi\nscheme=\"com.googleusercontent.apps.${client_id%.apps.googleusercontent.com}\"\nif /usr/libexec/PlistBuddy -c \"Print :CFBundleURLTypes\" \"$info\" | /usr/bin/grep -qF \"$scheme\"; then\n    exit 0\nfi\n/usr/bin/plutil -insert CFBundleURLTypes.0 -xml \"<dict><key>CFBundleTypeRole</key><string>Viewer</string><key>CFBundleURLName</key><string>com.ohia.google-oauth</string><key>CFBundleURLSchemes</key><array><string>$scheme</string></array></dict>\" \"$info\"\n";
+		};
+		8C2B6E102FA2D00000B3E301 /* Copy Bundled ML Models */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/BundledModels/bge-m3",
+				"$(SRCROOT)/BundledModels/bge-m3/tokenizer.json",
+				"$(SRCROOT)/BundledModels/bge-m3/tokenizer_config.json",
+				"$(SRCROOT)/BundledModels/bge-m3/special_tokens_map.json",
+				"$(SRCROOT)/BundledModels/bge-reranker-v2-m3",
+				"$(SRCROOT)/BundledModels/bge-reranker-v2-m3/tokenizer.json",
+				"$(SRCROOT)/BundledModels/bge-reranker-v2-m3/tokenizer_config.json",
+				"$(SRCROOT)/BundledModels/bge-reranker-v2-m3/special_tokens_map.json",
+			);
+			name = "Copy Bundled ML Models";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Models/bge-m3",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Models/bge-m3/tokenizer.json",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Models/bge-m3/tokenizer_config.json",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Models/bge-m3/special_tokens_map.json",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Models/bge-reranker-v2-m3",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Models/bge-reranker-v2-m3/tokenizer.json",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Models/bge-reranker-v2-m3/tokenizer_config.json",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/Models/bge-reranker-v2-m3/special_tokens_map.json",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\ncopy_model() {\n    local name=\"$1\"\n    local src=\"$SRCROOT/BundledModels/$name\"\n    local dst=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/Models/$name\"\n    local src_pkg=\"$src/$name.mlpackage\"\n    local dst_pkg=\"$dst/$name.mlpackage\"\n    local src_compiled=\"$src/$name.mlmodelc\"\n    local dst_compiled=\"$dst/$name.mlmodelc\"\n\n    if [ ! -f \"$src/tokenizer.json\" ] || [ ! -f \"$src/tokenizer_config.json\" ] || [ ! -f \"$src/special_tokens_map.json\" ]; then\n        return 0\n    fi\n\n    mkdir -p \"$dst\"\n    rm -rf \"$dst_pkg\" \"$dst_compiled\"\n\n    if [ -d \"$src_compiled\" ]; then\n        /bin/cp -Rp \"$src_compiled\" \"$dst_compiled\"\n    elif [ -f \"$src_pkg/Manifest.json\" ] && [ -f \"$src_pkg/Data/com.apple.CoreML/model.mlmodel\" ] && [ -f \"$src_pkg/Data/com.apple.CoreML/weights/weight.bin\" ]; then\n        mkdir -p \"$dst_pkg/Data/com.apple.CoreML/weights\"\n        /bin/cp -p -f \"$src_pkg/Manifest.json\" \"$dst_pkg/Manifest.json\"\n        /bin/cp -p -f \"$src_pkg/Data/com.apple.CoreML/model.mlmodel\" \"$dst_pkg/Data/com.apple.CoreML/model.mlmodel\"\n        /bin/cp -p -f \"$src_pkg/Data/com.apple.CoreML/weights/weight.bin\" \"$dst_pkg/Data/com.apple.CoreML/weights/weight.bin\"\n    else\n        return 0\n    fi\n\n    /bin/cp -p -f \"$src/tokenizer.json\" \"$src/tokenizer_config.json\" \"$src/special_tokens_map.json\" \"$dst/\"\n}\ncopy_model bge-m3\ncopy_model bge-reranker-v2-m3\n";
+		};
+		8C4F0A6A2F9D6C24003D18A1 /* Create CNumKong Header-Only Object */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Create CNumKong Header-Only Object";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/CNumKong.o",
+				"$(DERIVED_FILE_DIR)/OhiaWorkerBuild/out/Products/$(CONFIGURATION)/CNumKong.o",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\n# NumKong's CNumKong target is header-only, but Xcode still adds a\n# CNumKong.o input to both the app and SwiftPM worker link steps. Produce\n# the empty objects that a header-only target would normally contribute.\narch=\"${CURRENT_ARCH:-}\"\nif [ -z \"$arch\" ] || [ \"$arch\" = \"undefined_arch\" ]; then\n    arch=\"${NATIVE_ARCH_ACTUAL:-$(uname -m)}\"\nfi\nworker_products=\"$DERIVED_FILE_DIR/OhiaWorkerBuild/out/Products/${CONFIGURATION:-Debug}\"\n/bin/mkdir -p \"$worker_products\"\n\"${CC:-/usr/bin/clang}\" -arch \"$arch\" -isysroot \"$SDKROOT\" -x c -c /dev/null -o \"$BUILT_PRODUCTS_DIR/CNumKong.o\"\n/bin/cp -f \"$BUILT_PRODUCTS_DIR/CNumKong.o\" \"$worker_products/CNumKong.o\"\n";
+		};
+		8C7A0B102FA7000000F00D01 /* Build Worker Helpers */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Ohia/OhiaMessagesReader.entitlements",
+				"$(SRCROOT)/Ohia/OhiaRetrievalWorker.entitlements",
+				"$(SRCROOT)/Ohia/OhiaGenerativeWorker.entitlements",
+				"$(SRCROOT)/Packages/Package.swift",
+				"$(SRCROOT)/Packages/XPCServices/OhiaMessagesReader-Info.plist",
+				"$(SRCROOT)/Packages/XPCServices/OhiaRetrievalWorker-Info.plist",
+				"$(SRCROOT)/Packages/XPCServices/OhiaGenerativeWorker-Info.plist",
+				"$(SRCROOT)/Packages/Sources/OhiaMessagesReader/OhiaMessagesReaderMain.swift",
+				"$(SRCROOT)/Packages/Sources/OhiaRetrievalWorker/OhiaRetrievalWorkerMain.swift",
+				"$(SRCROOT)/Packages/Sources/OhiaGenerativeWorker/OhiaGenerativeWorkerMain.swift",
+				"$(SRCROOT)/Packages/Sources/OhiaWorkerSupport/OhiaWorkerEntrypoint.swift",
+				"$(SRCROOT)/Packages/Sources/OhiaWorkerSupport/OhiaWorkerRuntime.swift",
+				"$(SRCROOT)/Packages/Sources/OhiaWorkerSupport/OhiaWorkerXPCService.swift",
+				"$(SRCROOT)/Packages/Sources/OhiaWorkerSupport/WorkerRole.swift",
+			);
+			name = "Build Worker Helpers";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/XPCServices/OhiaMessagesReader.xpc",
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/XPCServices/OhiaRetrievalWorker.xpc",
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/XPCServices/OhiaGenerativeWorker.xpc",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\nconfig=debug\nif [ \"${CONFIGURATION:-Debug}\" = \"Release\" ]; then\n    config=release\nfi\nscratch=\"$DERIVED_FILE_DIR/OhiaWorkerBuild\"\nservices_root=\"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/XPCServices\"\nretrieval_entitlements=\"$SRCROOT/Ohia/OhiaRetrievalWorker.entitlements\"\ngenerative_entitlements=\"$SRCROOT/Ohia/OhiaGenerativeWorker.entitlements\"\nmessages_reader_entitlements=\"$SRCROOT/Ohia/OhiaMessagesReader.entitlements\"\nmlx_resource_bundle=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/mlx-swift_Cmlx.bundle\"\nsign_identity=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\n/bin/rm -f \"$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/OhiaMessagesReader\" \"$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/OhiaRetrievalWorker\" \"$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/OhiaGenerativeWorker\"\nbuild_service() {\n    local product=\"$1\"\n    local plist=\"$2\"\n    local entitlements=\"${3:-}\"\n    local includes_mlx_resources=\"${4:-0}\"\n    local worker=\"$scratch/$config/$product\"\n    local bundle=\"$services_root/$product.xpc\"\n    local contents=\"$bundle/Contents\"\n    local executable_dir=\"$contents/MacOS\"\n    /usr/bin/swift build --package-path \"$SRCROOT/Packages\" --product \"$product\" -c \"$config\" --scratch-path \"$scratch\"\n    /bin/rm -rf \"$bundle\"\n    /bin/mkdir -p \"$executable_dir\"\n    /bin/cp -f \"$plist\" \"$contents/Info.plist\"\n    /bin/cp -f \"$worker\" \"$executable_dir/$product\"\n    /bin/chmod 755 \"$executable_dir/$product\"\n    if [ \"$product\" != \"OhiaMessagesReader\" ]; then\n        local resource_bundle\n        local resource_name\n        /bin/mkdir -p \"$contents/Resources\"\n        for resource_bundle in \"$scratch/$config\"/*.bundle; do\n            [ -d \"$resource_bundle\" ] || continue\n            resource_name=\"${resource_bundle##*/}\"\n            /usr/bin/ditto \"$resource_bundle\" \"$contents/Resources/$resource_name\"\n        done\n    fi\n    if [ \"$includes_mlx_resources\" = \"1\" ]; then\n        if [ ! -d \"$mlx_resource_bundle\" ]; then\n            echo \"error: missing MLX Metal resource bundle at $mlx_resource_bundle\" >&2\n            exit 1\n        fi\n        /bin/mkdir -p \"$contents/Resources\"\n        /usr/bin/ditto \"$mlx_resource_bundle\" \"$contents/Resources/mlx-swift_Cmlx.bundle\"\n    fi\n    if [ -n \"$entitlements\" ]; then\n        /usr/bin/codesign --force --sign \"$sign_identity\" --options runtime --entitlements \"$entitlements\" --timestamp=none \"$bundle\"\n    else\n        /usr/bin/codesign --force --sign \"$sign_identity\" --options runtime --timestamp=none \"$bundle\"\n    fi\n}\nbuild_service OhiaMessagesReader \"$SRCROOT/Packages/XPCServices/OhiaMessagesReader-Info.plist\" \"$messages_reader_entitlements\"\nbuild_service OhiaRetrievalWorker \"$SRCROOT/Packages/XPCServices/OhiaRetrievalWorker-Info.plist\" \"$retrieval_entitlements\"\nbuild_service OhiaGenerativeWorker \"$SRCROOT/Packages/XPCServices/OhiaGenerativeWorker-Info.plist\" \"$generative_entitlements\" 1\n";
+		};
+		8C7A0B112FA7000000F00D02 /* Copy LiteParse Helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/Vendor/LiteParseHelper",
+				"$(SRCROOT)/tools/verify-liteparse-helper.sh",
+			);
+			name = "Copy LiteParse Helper";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/LiteParseHelper",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -euo pipefail\nsrc=\"$SRCROOT/Vendor/LiteParseHelper\"\ndst=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/LiteParseHelper\"\nif [ ! -d \"$src\" ]; then\n    echo \"error: LiteParse helper is required for Ohia builds: $src\" >&2\n    exit 1\nfi\nmkdir -p \"$(dirname \"$dst\")\"\nrm -rf \"$dst\"\n/bin/cp -Rp \"$src\" \"$dst\"\nfor executable in \"$dst/lit\" \"$dst/bin/lit\" \"$dst/node/bin/node\"; do\n    if [ -f \"$executable\" ]; then\n        /bin/chmod 755 \"$executable\"\n    fi\ndone\n\"$SRCROOT/tools/verify-liteparse-helper.sh\" \"$dst\"\n# Release builds are notarized: every signature needs a secure timestamp and\n# the hardened runtime. Node keeps only the exceptions V8 and native addons need.\ntimestamp_flag=\"--timestamp=none\"\nif [ \"${CONFIGURATION:-Debug}\" = \"Release\" ]; then\n    timestamp_flag=\"--timestamp\"\nfi\nif [ -n \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ]; then\n    /usr/bin/find \"$dst\" -type f \\( -name \"*.node\" -o -name \"*.dylib\" \\) -exec /usr/bin/codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" --options runtime \"$timestamp_flag\" {} \\;\n    for executable in \"$dst/lit\" \"$dst/bin/lit\"; do\n        if [ -f \"$executable\" ]; then\n            /usr/bin/codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$timestamp_flag\" \"$executable\"\n        fi\n    done\n    /usr/bin/codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" --options runtime --entitlements \"$SRCROOT/Ohia/LiteParseNode.entitlements\" \"$timestamp_flag\" \"$dst/node/bin/node\"\nfi\n";
+		};
+		8C7A0B122FA7000000F00D03 /* Build Worker Helpers with Xcode */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(SRCROOT)/tools/build-worker-helpers.sh",
+				"$(SRCROOT)/Ohia/OhiaMessagesReader.entitlements",
+				"$(SRCROOT)/Ohia/OhiaRetrievalWorker.entitlements",
+				"$(SRCROOT)/Ohia/OhiaGenerativeWorker.entitlements",
+				"$(SRCROOT)/Packages/Package.swift",
+				"$(SRCROOT)/Ohia.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved",
+				"$(SRCROOT)/Packages/XPCServices/OhiaMessagesReader-Info.plist",
+				"$(SRCROOT)/Packages/XPCServices/OhiaRetrievalWorker-Info.plist",
+				"$(SRCROOT)/Packages/XPCServices/OhiaGenerativeWorker-Info.plist",
+				"$(SRCROOT)/Packages/Sources/OhiaMessagesReader/OhiaMessagesReaderMain.swift",
+				"$(SRCROOT)/Packages/Sources/OhiaRetrievalWorker/OhiaRetrievalWorkerMain.swift",
+				"$(SRCROOT)/Packages/Sources/OhiaGenerativeWorker/OhiaGenerativeWorkerMain.swift",
+				"$(SRCROOT)/Packages/Sources/OhiaWorkerSupport/OhiaWorkerEntrypoint.swift",
+				"$(SRCROOT)/Packages/Sources/OhiaWorkerSupport/OhiaWorkerRuntime.swift",
+				"$(SRCROOT)/Packages/Sources/OhiaWorkerSupport/OhiaWorkerXPCService.swift",
+				"$(SRCROOT)/Packages/Sources/OhiaWorkerSupport/WorkerRole.swift",
+			);
+			name = "Build Worker Helpers with Xcode";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/XPCServices/OhiaMessagesReader.xpc",
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/XPCServices/OhiaRetrievalWorker.xpc",
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/XPCServices/OhiaGenerativeWorker.xpc",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"$SRCROOT/tools/build-worker-helpers.sh\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		8C91365D2F8F9D9300CD3696 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		8C91366A2F8F9D9400CD3696 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 3T72U4Q7A5;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		8C91366B2F8F9D9400CD3696 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEAD_CODE_STRIPPING = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 3T72U4Q7A5;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
+				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = macosx;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		8C91366D2F8F9D9400CD3696 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Ohia/Ohia.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3T72U4Q7A5;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Ohia/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.9.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.jgkarlin.Ohia;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		8C91366E2F8F9D9400CD3696 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = Ohia/Ohia.entitlements;
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3T72U4Q7A5;
+				ENABLE_APP_SANDBOX = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SELECTED_FILES = readwrite;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Ohia/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.9.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.jgkarlin.Ohia;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				REGISTER_APP_GROUPS = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		8C91365C2F8F9D9300CD3696 /* Build configuration list for PBXProject "Ohia" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8C91366A2F8F9D9400CD3696 /* Debug */,
+				8C91366B2F8F9D9400CD3696 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8C91366C2F8F9D9400CD3696 /* Build configuration list for PBXNativeTarget "Ohia" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8C91366D2F8F9D9400CD3696 /* Debug */,
+				8C91366E2F8F9D9400CD3696 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		8C3D616F2F8FA11F00C04BE1 /* XCLocalSwiftPackageReference "Packages" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		8C3D61712F8FA18B00C04BE1 /* OhiaCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C3D616F2F8FA11F00C04BE1 /* XCLocalSwiftPackageReference "Packages" */;
+			productName = OhiaCore;
+		};
+		8C3D61732F8FA18B00C04BE1 /* OhiaIngest */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C3D616F2F8FA11F00C04BE1 /* XCLocalSwiftPackageReference "Packages" */;
+			productName = OhiaIngest;
+		};
+		8C3D61752F8FA18B00C04BE1 /* OhiaML */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C3D616F2F8FA11F00C04BE1 /* XCLocalSwiftPackageReference "Packages" */;
+			productName = OhiaML;
+		};
+		8C3D61772F8FA18B00C04BE1 /* OhiaScheduler */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C3D616F2F8FA11F00C04BE1 /* XCLocalSwiftPackageReference "Packages" */;
+			productName = OhiaScheduler;
+		};
+		8C3D61792F8FA18B00C04BE1 /* OhiaMessagesReaderProtocol */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C3D616F2F8FA11F00C04BE1 /* XCLocalSwiftPackageReference "Packages" */;
+			productName = OhiaMessagesReaderProtocol;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 8C9136592F8F9D9300CD3696 /* Project object */;
+}

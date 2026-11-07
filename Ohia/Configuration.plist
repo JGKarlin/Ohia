@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        OAuth client IDs, read at runtime by OAuthProvider.clientID.
+
+        This build ships without registered clients, so Google and Microsoft
+        accounts connect with an app password. To enable their sign-in, register
+        your own OAuth client with each provider and enter its client ID here.
+        Never place a client secret in a desktop application.
+    -->
+    <key>OHIA_GOOGLE_OAUTH_CLIENT_ID</key>
+    <string></string>
+    <key>OHIA_MS_OAUTH_CLIENT_ID</key>
+    <string></string>
+    <!--
+        Slack MCP does not support dynamic client registration. Enter the
+        client ID of a PKCE-enabled Slack app to enable the Slack connector.
+    -->
+    <key>OHIA_SLACK_MCP_CLIENT_ID</key>
+    <string></string>
+</dict>
+</plist>

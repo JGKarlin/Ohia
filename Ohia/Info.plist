@@ -1,0 +1,98 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Standard bundle metadata. GENERATE_INFOPLIST_FILE used to write
+	     these automatically, but we can't express CFBundleURLTypes
+	     through INFOPLIST_KEY_* build settings, so we ship a full
+	     Info.plist and declare everything here. -->
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>$(PRODUCT_BUNDLE_PACKAGE_TYPE)</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+
+	<!-- Usage-description strings formerly driven by INFOPLIST_KEY_* build
+	     settings. -->
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Ohia uses automation to read Mail.app account names, email addresses, and server settings when you connect an account, and to read a note from Apple Notes when you add one as context for a draft.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Ohia reads calendar events for scheduling context and, when you enable it, tracks email deadlines and meetings in a dedicated "Ohia" calendar with reminders.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Ohia reads contacts to identify correspondents and provide context for draft replies.</string>
+	<key>NSHumanReadableCopyright</key>
+	<string></string>
+	<key>NSRemindersFullAccessUsageDescription</key>
+	<string>Ohia reads reminders to provide task context for draft replies.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Ohia uses speech recognition to transcribe questions you ask the constellation.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Ohia listens to your microphone only while you are dictating a question.</string>
+
+	<!-- Private in-process payload used to drag Junk/Trash rows back into mail. -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.ohia.withheld-rows</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Ohia Withheld Rows</string>
+		</dict>
+	</array>
+
+	<!-- URL-scheme registrations. macOS routes URLs with these schemes to
+	     Ohia, handled in OhiaApp → OhiaAppDelegate.application(_:open:).
+
+	     "com.ohia.app" is the Microsoft OAuth redirect →
+	     OAuthCoordinator.handleIncomingURL. Google's redirect uses the
+	     reversed client ID, so the "Register Google OAuth Redirect Scheme"
+	     build phase adds that scheme from Configuration.plist when a Google
+	     client ID is configured.
+
+	     "ohia" is an in-app deep link (e.g. ohia://message/<uuid>) used by
+	     things like the "Open in Ohia" links Ohia writes into synced
+	     calendar-event notes — not an OAuth redirect. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>com.ohia.microsoft-oauth</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>com.ohia.app</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLName</key>
+			<string>com.ohia.deeplink</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>ohia</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
