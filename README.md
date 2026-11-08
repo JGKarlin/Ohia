@@ -238,9 +238,33 @@ Work is held in a persistent job queue, and each worker takes the kinds of job i
 
 ### Ingestion
 
-Ohia connects with [swift-nio-imap](https://github.com/apple/swift-nio-imap), downloads each message's raw source, and parses it with its own MIME parser. It imports your history in the background and checks your folders for new and deleted mail. Junk and Trash are not imported. Message metadata lives in a SwiftData store, and bodies and attachments are kept as files.
+Ohia connects with [swift-nio-imap](https://github.com/apple/swift-nio-imap), downloads each message's raw source, and parses it with its own MIME parser. It imports your history in the background and checks your folders for new and deleted mail. Junk and Trash are not imported. Message records live in a SwiftData store, and bodies and attachments are kept as files; see [The mail store](#the-mail-store).
 
 New mail that arrives while Ohia is running gets the full reading described under [Interpretation](#interpretation), including whether it needs a reply. Mail imported from your history gets a category and labels but is not triaged, so importing ten years of mail does not create ten years of unanswered obligations.
+
+### The mail store
+
+Your mail is kept in three stores inside Ohia's container (`~/Library/Group Containers/group.org.jgkarlin.Ohia/private-state/`), each with one job. All three key a message by the same identifier, and the app and its worker services share them.
+
+| Store | What it holds |
+| --- | --- |
+| `Ohia.store` | The structured record of everything, in a SwiftData database (SQLite underneath): accounts and sending identities, messages, threads, participants and correspondents, attachments, each message's interpretation, labels and categories, drafts and their revisions, the outbox, Memories, projects and deadlines, mailing lists, writing styles, training data and checkpoints, the job queue, and the state of each IMAP folder. |
+| `messages/` | One folder per message: the raw source exactly as downloaded (`raw.eml`), the plain-text body, the HTML body, and an `attachments/` folder holding each file and what was extracted from it: its text, the text prepared for embedding, and the structured document with its chunks. |
+| `vectors.sqlite` | The vectors, full-text indexes, neighbour graph, layout positions and clusters, described under [The vector database](#the-vector-database). |
+
+**A message record** holds the headers Ohia works with (sender, subject, dates, Message-ID, In-Reply-To and References), its recipients as participant records, the IMAP folder and UID it came from, its read and flagged state, whether you sent it, its mailing-list headers, and a status for each stage of the pipeline. Large text stays out of the database: the record points to the body and attachment files. Related records are kept together, so deleting a message removes its participants, attachments, interpretation and draft with it.
+
+**Duplicates.** A message that appears in several folders, as every message does in Gmail's labels and All Mail, is stored once. Ohia recognizes it by its folder and UID, then by a content hash (SHA-256 of its Message-ID, date, sender and the first 500 characters of the body), then by its Message-ID, sender and date.
+
+**Threads.** Messages join threads as they arrive, by their Message-ID, In-Reply-To and References headers. A later pass links messages whose headers are missing, by normalized subject and overlapping participants.
+
+**Sync state.** For each folder, Ohia records its special-use flags (Inbox, Sent, Archive, Junk, Trash and so on), its UIDVALIDITY and the highest UID imported, so an import resumes where it stopped and a folder rebuilt on the server is noticed rather than misread.
+
+**Deletions on the server.** When messages vanish from a folder, Ohia decides what that means before removing anything. On Gmail, only a removal from All Mail counts as a deletion; a removed label does not. On other servers, a message whose Message-ID still exists elsewhere in the account is treated as moved, and the rest are held for a 10-minute grace period, so a move between folders is not mistaken for a deletion. A confirmed deletion removes the message's files, vectors and index entries, and turns its record into an inactive placeholder, so a view that is showing the message at that moment does not break.
+
+**Reading at speed.** SwiftData is the store's writer. For the counts and batch selections the background scheduler makes constantly, Ohia also reads the store's SQLite tables directly with read-only queries, backed by a few indexes it adds for them.
+
+**Schema safety.** Each build records a generation number for the store's schema. A build whose schema changed without a new generation refuses to open the store, rather than let an automatic migration damage it.
 
 ### Attachments and files
 
