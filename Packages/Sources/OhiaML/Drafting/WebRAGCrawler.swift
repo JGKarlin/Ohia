@@ -369,9 +369,12 @@ public enum WebRAGCrawlerError: LocalizedError, Sendable {
 
 public struct WebRAGCrawler: Sendable {
     public typealias Fetch = @Sendable (URLRequest) async throws -> WebRAGHTTPResponse
+    /// The text of a fetched PDF, or nil when it has none or cannot be read.
+    public typealias PDFText = @Sendable (Data) -> String?
 
     private let fetch: Fetch
     private let now: @Sendable () -> Date
+    private let pdfText: PDFText
 
     public init(
         fetch: @escaping Fetch = { request in
@@ -384,10 +387,23 @@ public struct WebRAGCrawler: Sendable {
                 responseURL: response.url
             )
         },
-        now: @escaping @Sendable () -> Date = Date.init
+        now: @escaping @Sendable () -> Date = Date.init,
+        pdfText: @escaping PDFText = Self.extractPDFText
     ) {
         self.fetch = fetch
         self.now = now
+        self.pdfText = pdfText
+    }
+
+    /// Reads a fetched PDF in the sandboxed PDF parser service, like any
+    /// attachment; it is never opened in this process.
+    public static let extractPDFText: PDFText = { data in
+        AttachmentExtractor.extract(
+            data: data,
+            mimeType: "application/pdf",
+            filename: "document.pdf",
+            policy: .full
+        )?.text
     }
 
     static func automaticPublicInternet(
@@ -644,10 +660,7 @@ public struct WebRAGCrawler: Sendable {
             guard response.data.count <= config.maxHTMLBytes else {
                 throw WebRAGCrawlerError.unsupportedContent("PDF exceeds the document size limit")
             }
-            guard let extracted = AttachmentExtractor.extract(data: response.data,
-                mimeType: "application/pdf", filename: "document.pdf",
-                policy: .full),
-                  let text = extracted.text?.trimmingCharacters(in: .whitespacesAndNewlines),
+            guard let text = pdfText(response.data)?.trimmingCharacters(in: .whitespacesAndNewlines),
                   !text.isEmpty else { throw WebRAGCrawlerError.emptyContent }
             try Task.checkCancellation()
             let title = pending.anchorText ?? finalURL.lastPathComponent

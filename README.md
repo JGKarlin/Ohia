@@ -6,8 +6,6 @@ Ohia is an experimental email client for macOS that runs open-weight language mo
 
 Ohia is research software. Version 0.9.0 is the first public release, and the app will keep changing.
 
-This README describes the current development version. A few things it describes arrive after 0.9.0, in the next release: signing in with Microsoft, the in-app reset, PDF parsing in a sandboxed service of its own, embedding documents sized to the model's token window, and word-aware passage selection for languages written without spaces.
-
 ## Why Ohia exists
 
 Ohia is a working test of a question: how far can open-weight models running on consumer hardware go on tasks that usually depend on cloud AI services? It examines three of them, applied to a real mailbox of tens of thousands of messages:
@@ -184,7 +182,7 @@ Where Apple Intelligence is turned on and available (macOS 26 or later on a supp
 
 ### Apple Vision, NaturalLanguage and Speech
 
-- **Vision.** Text recognition reads text in image attachments; the plain extraction step recognizes English and Japanese, and the image-description step detects the language automatically. Image classification and detectors for faces, people, animals, barcodes, rectangles and salient objects supply the evidence for image descriptions. Vision also suggests whether an image you add to a signature is a headshot, a logo or a banner.
+- **Vision.** Text recognition reads text in image attachments and in the screen captures you add to the Composer. It detects each image's language, so it reads any language Vision supports on your Mac, including Chinese, Japanese, Korean, Arabic and Thai, and images that mix languages. Image classification and detectors for faces, people, animals, barcodes, rectangles and salient objects supply the evidence for image descriptions. Vision also suggests whether an image you add to a signature is a headshot, a logo or a banner.
 - **NaturalLanguage.** Language identification records each message's language as it is ingested and checks the language of drafts. Its sentence and word boundaries let Ohia cut text written without spaces, such as Japanese, Chinese and Thai, into windows for embedding and for the Composer's passage selection; each passage is analysed on its own, so a Japanese body below an English note is still segmented correctly. Its dictionary forms of words (lemmas) help Ohia measure how much a draft's wording overlaps its sources.
 - **Speech.** Dictation in Ask uses macOS speech recognition in your Mac's language.
 
@@ -232,7 +230,7 @@ Background work runs outside the app, in XPC services built from the same Swift 
 - **OhiaRetrievalWorker** does the mail and index work: downloading and parsing mail over IMAP, extracting attachments, analyzing images, embedding, indexing, the neighbour graph, the spatial layout, clustering, and sending mail from the outbox.
 - **OhiaGenerativeWorker** runs the Qwen model: interpretation, summaries, answers for Ask, Composer preparation and drafting, Memories, and training.
 - **OhiaMessagesReader** reads your Messages history, only if you grant it access, so the Composer can see recent texts with a correspondent.
-- **OhiaPDFParser** runs the bundled LiteParse PDF parser in a sandbox of its own, with no network access and no access to Ohia's data. Ohia extracts the text of PDFs with it: the app calls it directly, and the workers send their PDFs through the app.
+- **OhiaPDFParser** opens every PDF Ohia reads, in a sandbox of its own with no network access and no access to Ohia's data. It parses PDFs with the bundled LiteParse parser, reads their text with PDFKit when LiteParse fails, and renders pages as images for Apple Intelligence; only the text and the images leave it. The app calls it directly, and the workers send their PDFs through the app. Mail ingestion, attachment extraction and image analysis open PDFs nowhere else, and decode images with ImageIO, which does not read PDF, so a PDF named like an image is not opened either.
 
 Work is held in a persistent job queue, and each worker takes the kinds of job it owns. On Macs with 16 GB of memory or less, only one model is loaded at a time. Background model work steps aside when you are using Ohia, and requests you make yourself (a draft, an answer, a translation) take priority. Work slows or pauses under memory pressure, high temperature, on battery or in Low Power Mode, and training waits until the Mac is idle.
 
@@ -272,11 +270,11 @@ Each attachment is converted to text by a method suited to its type:
 
 | Type | Method |
 | --- | --- |
-| PDF | [LiteParse](https://github.com/run-llama/liteparse), run with a bundled Node.js runtime inside the sandboxed OhiaPDFParser service, for layout-aware parsing into pages and blocks; PDFKit as a fallback, and to render pages as images where Apple Intelligence reads them |
+| PDF | [LiteParse](https://github.com/run-llama/liteparse), run with a bundled Node.js runtime inside the sandboxed OhiaPDFParser service, for layout-aware parsing into pages and blocks; PDFKit, in the same service, as a fallback and to render pages as images where Apple Intelligence reads them |
 | Word, Excel, PowerPoint | Ohia's own Office Open XML extractor |
 | CSV, TSV, Excel sheets | Parsed into typed tables, so rows and columns survive |
 | HTML, RTF, older Office formats | macOS's text system |
-| Images | Vision text recognition |
+| Images | Vision text recognition, with each image's language detected automatically |
 
 Extracted documents are normalized into a structured form that keeps page, sheet and section boundaries, and that structure decides where the text is cut into chunks for embedding.
 
@@ -435,7 +433,7 @@ Each release lists the SHA-256 checksum of the disk image, so you can check a do
 
 Ohia connects to mail over IMAP and SMTP.
 
-- **Microsoft accounts (Outlook.com, Hotmail, Live, Microsoft 365):** version 0.9.0 cannot connect these accounts. From the next release, choose **Sign in with Microsoft**. A work or school account may need approval from the organization's IT department. If Microsoft asks for an administrator's approval, ask them to approve Ohia. The organization must also allow IMAP access to the mailbox.
+- **Microsoft accounts (Outlook.com, Hotmail, Live, Microsoft 365):** choose **Sign in with Microsoft**. A work or school account may need approval from the organization's IT department. If Microsoft asks for an administrator's approval, ask them to approve Ohia. The organization must also allow IMAP access to the mailbox.
 - **iCloud Mail:** create an app-specific password at [account.apple.com](https://account.apple.com) (Sign-In and Security, then App-Specific Passwords).
 - **Gmail:** turn on 2-Step Verification, then create an app password at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords). Make sure IMAP access is enabled in Gmail's settings. Signing in with Google directly will follow once Google finishes reviewing Ohia's Gmail access.
 - **Fastmail and most other providers:** use an app password from your provider's security settings.
@@ -470,9 +468,9 @@ The notification sounds in the released app are licensed for use in the app only
 
 Optional:
 
-- **Google or Microsoft sign-in:** the source carries no OAuth client IDs; from the next release, the released app adds Ohia's Microsoft client ID when it is built. For sign-in in your own build, register your own OAuth client and put its client ID in `Ohia/Configuration.plist` (`OHIA_GOOGLE_OAUTH_CLIENT_ID`, `OHIA_MS_OAUTH_CLIENT_ID`). With a client ID present, the sign-in buttons return.
+- **Google or Microsoft sign-in:** the source carries no OAuth client IDs; the released app adds Ohia's Microsoft client ID when it is built. For sign-in in your own build, register your own OAuth client and put its client ID in `Ohia/Configuration.plist` (`OHIA_GOOGLE_OAUTH_CLIENT_ID`, `OHIA_MS_OAUTH_CLIENT_ID`). With a client ID present, the sign-in buttons return.
 - **Bundled embedding models:** `tools/fetch-bundled-bge.sh` downloads the embedding and reranking models into `BundledModels/` so they ship inside the app instead of downloading at first launch. It needs the Hugging Face CLI (`brew install huggingface-cli`).
-- **Fresh start:** in 0.9.0, `tools/reset-ohia.sh` clears Ohia's local data so the next launch behaves like a new install; check the script before you run it. From the next release, Settings → Developer → Reset Ohia removes Ohia's accounts, credentials, messages and the rest of its local state, then returns to onboarding. Your mailboxes are not changed.
+- **Fresh start:** in Ohia, Settings → Developer → Reset Ohia removes Ohia's accounts, credentials, messages and the rest of its local state, then returns to onboarding. Your mailboxes are not changed.
 
 The code is organized as an Xcode app (`Ohia/`) on top of five Swift packages in `Packages/Sources`:
 

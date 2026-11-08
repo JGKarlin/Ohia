@@ -77,7 +77,7 @@ public final class ToolRegistry: @unchecked Sendable {
         case .search:
             selectedNames = ["corpus_search"]
         case .locateAttachment:
-            selectedNames = ["attachment_search", "file_system"]
+            selectedNames = ["attachment_search"]
         case .compare:
             selectedNames = ["corpus_search", "thread_history"]
         case .summarize:

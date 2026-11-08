@@ -6,7 +6,6 @@ import SwiftData
 public final class EmbeddingMigrationCoordinator: @unchecked Sendable {
     private let registry: EmbedderRegistry
     private let vectorStore: VectorStore
-    private let canonicalStore: CanonicalStore
 
     public struct Stats: Sendable, Equatable {
         public let scanned: Int
@@ -22,12 +21,10 @@ public final class EmbeddingMigrationCoordinator: @unchecked Sendable {
 
     public init(
         registry: EmbedderRegistry,
-        vectorStore: VectorStore,
-        canonicalStore: CanonicalStore
+        vectorStore: VectorStore
     ) {
         self.registry = registry
         self.vectorStore = vectorStore
-        self.canonicalStore = canonicalStore
     }
 
     public func staleMessageIds(limit: Int) throws -> [String] {
@@ -35,39 +32,6 @@ public final class EmbeddingMigrationCoordinator: @unchecked Sendable {
             whereVersionNot: registry.current.embeddingVersion,
             limit: limit
         )
-    }
-
-    public func migrateBatch(messageIds: [String]) throws -> Stats {
-        var migrated = 0
-        var skipped = 0
-
-        for messageId in messageIds {
-            do {
-                let bodyText = try canonicalStore.readBody(messageId: messageId)
-                let searchableBodyText = OriginalMessageText.cleaned(from: bodyText) ?? ""
-                guard let vector = registry.current.embed(searchableBodyText) else {
-                    skipped += 1
-                    continue
-                }
-
-                try vectorStore.deleteVectors(forMessageId: messageId)
-                try vectorStore.insert(
-                    messageId: messageId,
-                    collection: .context,
-                    chunkIndex: 0,
-                    embeddingVersion: registry.current.embeddingVersion,
-                    vector: vector,
-                    textPayload: searchableBodyText,
-                    metadataJSON: "{}"
-                )
-                migrated += 1
-            } catch {
-                print("[EmbeddingMigrationCoordinator] skipped messageId=\(messageId): \(String(reflecting: type(of: error)))")
-                skipped += 1
-            }
-        }
-
-        return Stats(scanned: messageIds.count, migrated: migrated, skipped: skipped)
     }
 
     @MainActor
@@ -79,16 +43,55 @@ public final class EmbeddingMigrationCoordinator: @unchecked Sendable {
         var migrated = 0
         var skipped = 0
 
-        for messageId in messageIds {
+        for ownerId in messageIds {
             do {
-                try await orchestrator.reembedMessage(messageId: messageId, context: context)
-                migrated += 1
+                switch try owner(of: ownerId, context: context) {
+                case .message:
+                    try await orchestrator.reembedMessage(messageId: ownerId, context: context)
+                    migrated += 1
+                case .entity(let entity):
+                    // Entity vectors share the table, keyed by the entity's id.
+                    // Clearing the row hands the entity back to entity
+                    // promotion, which embeds it with the current embedder.
+                    try vectorStore.deleteVectors(forMessageId: ownerId)
+                    entity.vectorRowId = nil
+                    try context.save()
+                    migrated += 1
+                case .none:
+                    // No message or entity owns these rows any more. Nothing
+                    // can re-embed them, and kept, they would report stale
+                    // vectors forever and keep re-queueing this migration.
+                    try vectorStore.deleteVectors(forMessageId: ownerId)
+                    skipped += 1
+                }
             } catch {
-                print("[EmbeddingMigrationCoordinator] full-pipeline skip messageId=\(messageId): \(String(reflecting: type(of: error)))")
+                print("[EmbeddingMigrationCoordinator] full-pipeline skip id=\(ownerId): \(String(reflecting: type(of: error)))")
                 skipped += 1
             }
         }
 
         return Stats(scanned: messageIds.count, migrated: migrated, skipped: skipped)
+    }
+
+    private enum VectorOwner {
+        case message
+        case entity(Entity)
+        case none
+    }
+
+    @MainActor
+    private func owner(of ownerId: String, context: ModelContext) throws -> VectorOwner {
+        guard let id = UUID(uuidString: ownerId) else { return .none }
+        var messageDescriptor = FetchDescriptor<Message>(predicate: #Predicate<Message> { $0.id == id })
+        messageDescriptor.fetchLimit = 1
+        if try context.fetchCount(messageDescriptor) > 0 {
+            return .message
+        }
+        var entityDescriptor = FetchDescriptor<Entity>(predicate: #Predicate<Entity> { $0.id == id })
+        entityDescriptor.fetchLimit = 1
+        if let entity = try context.fetch(entityDescriptor).first {
+            return .entity(entity)
+        }
+        return .none
     }
 }

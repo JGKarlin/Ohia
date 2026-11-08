@@ -1,4 +1,5 @@
 import Foundation
+import OhiaPDFParsing
 
 /// Process configuration delivered by the app before an XPC worker starts its
 /// runtime. Secrets stay inside the app-private XPC connection instead of being
@@ -62,6 +63,25 @@ public protocol WorkerXPCCommandBrokerProtocol {
     func requestMailCredential(
         _ requestData: Data,
         withReply reply: @escaping @Sendable (Data?, NSError?) -> Void
+    )
+
+    /// Parses one PDF in the app's sandboxed `OhiaPDFParser.xpc`, which only
+    /// the app can reach. The reply carries the same fields as
+    /// `PDFParserXPCProtocol.parse`.
+    func parsePDF(
+        _ pdf: Data,
+        maxPages: Int,
+        withReply reply: @escaping @Sendable (Data?, Int, Int32, String?) -> Void
+    )
+
+    /// Renders pages of one PDF as PNG images in the app's sandboxed
+    /// `OhiaPDFParser.xpc`. The reply carries the same fields as
+    /// `PDFParserXPCProtocol.renderPages`.
+    func renderPDFPages(
+        _ pdf: Data,
+        maxPages: Int,
+        maxPixelSize: Int,
+        withReply reply: @escaping @Sendable (Data?, Int) -> Void
     )
 }
 
@@ -355,11 +375,53 @@ public final class WorkerXPCCommandBroker: NSObject,
         Data,
         @escaping @Sendable (Data?, NSError?) -> Void
     ) -> Void
+    public typealias PDFParseResolver = @Sendable (
+        Data,
+        Int,
+        WorkerRole,
+        @escaping @Sendable (PDFParserReply) -> Void
+    ) -> Void
+
+    public typealias PDFRenderResolver = @Sendable (
+        Data,
+        Int,
+        Int,
+        WorkerRole,
+        @escaping @Sendable (PDFRenderReply) -> Void
+    ) -> Void
+
+    /// The app's resolver: relays each worker PDF to `OhiaPDFParser.xpc`,
+    /// in the lane that matches the work the requesting worker does.
+    public static let appPDFParseResolver: PDFParseResolver = { pdf, maxPages, role, reply in
+        PDFParserRelay.shared.parse(pdf, maxPages: maxPages, lane: relayLane(for: role), reply: reply)
+    }
+
+    /// The app's resolver for page renders, in the same lanes as parses.
+    public static let appPDFRenderResolver: PDFRenderResolver = { pdf, maxPages, maxPixelSize, role, reply in
+        PDFParserRelay.shared.renderPages(
+            pdf,
+            maxPages: maxPages,
+            maxPixelSize: maxPixelSize,
+            lane: relayLane(for: role),
+            reply: reply
+        )
+    }
+
+    /// The retrieval worker extracts mail attachments in the background; the
+    /// generative worker parses the Composer sources the user is waiting on.
+    static func relayLane(for role: WorkerRole) -> PDFParserRelay.Lane {
+        switch role {
+        case .bge: .background
+        case .qwen: .interactive
+        }
+    }
 
     private let sourceRole: WorkerRole
     private let transport: WorkerCommandTransport
     private let messagesTranscriptResolver: MessagesTranscriptResolver
     private let mailCredentialResolver: MailCredentialResolver
+    private let pdfParseResolver: PDFParseResolver
+    private let pdfRenderResolver: PDFRenderResolver
 
     public init(
         sourceRole: WorkerRole,
@@ -379,12 +441,20 @@ public final class WorkerXPCCommandBroker: NSObject,
                     "Mail credential broker is unavailable"
                 ) as NSError
             )
+        },
+        pdfParseResolver: @escaping PDFParseResolver = { _, _, _, reply in
+            reply(PDFParserReply(outcome: .serviceUnavailable))
+        },
+        pdfRenderResolver: @escaping PDFRenderResolver = { _, _, _, _, reply in
+            reply(PDFRenderReply(outcome: .serviceUnavailable))
         }
     ) {
         self.sourceRole = sourceRole
         self.transport = transport
         self.messagesTranscriptResolver = messagesTranscriptResolver
         self.mailCredentialResolver = mailCredentialResolver
+        self.pdfParseResolver = pdfParseResolver
+        self.pdfRenderResolver = pdfRenderResolver
         super.init()
     }
 
@@ -431,6 +501,32 @@ public final class WorkerXPCCommandBroker: NSObject,
             return
         }
         mailCredentialResolver(requestData, reply)
+    }
+
+    /// Both workers parse attachments (the retrieval worker for mail, the
+    /// generative worker for Composer sources), so both may ask the app to
+    /// run the sandboxed PDF parser on their behalf.
+    public func parsePDF(
+        _ pdf: Data,
+        maxPages: Int,
+        withReply reply: @escaping @Sendable (Data?, Int, Int32, String?) -> Void
+    ) {
+        pdfParseResolver(pdf, maxPages, sourceRole) { result in
+            reply(result.output, result.outcome.rawValue, result.status, result.stderr)
+        }
+    }
+
+    /// Both workers render PDF pages for Apple Intelligence's image analysis
+    /// (mail attachments, Composer sources).
+    public func renderPDFPages(
+        _ pdf: Data,
+        maxPages: Int,
+        maxPixelSize: Int,
+        withReply reply: @escaping @Sendable (Data?, Int) -> Void
+    ) {
+        pdfRenderResolver(pdf, maxPages, maxPixelSize, sourceRole) { result in
+            reply(result.wireOutput, result.outcome.rawValue)
+        }
     }
 
     private func capabilityDenied(_ capability: String) -> NSError {

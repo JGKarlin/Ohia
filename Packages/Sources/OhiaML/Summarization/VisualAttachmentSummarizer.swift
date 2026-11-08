@@ -561,28 +561,10 @@ public enum VisualAttachmentEvidenceExtractor {
                 metadata: metadata
             )
         }
-
-#if canImport(AppKit)
-        guard let nsImage = NSImage(data: data) else { return nil }
-        var rect = NSRect(origin: .zero, size: nsImage.size)
-        guard let cgImage = nsImage.cgImage(forProposedRect: &rect, context: nil, hints: nil) else { return nil }
-        let width = cgImage.width
-        let height = cgImage.height
-        let metadata = VisualAttachmentEvidence.ImageMetadata(
-            width: width,
-            height: height,
-            pixelCount: pixelCount(width: width, height: height),
-            originalWidth: width,
-            originalHeight: height,
-            originalPixelCount: pixelCount(width: width, height: height),
-            orientation: CGImagePropertyOrientation.up.rawValue,
-            wasDownsampled: false,
-            mimeExtensionMismatch: mimeExtensionMismatch(mimeType: mimeType, filename: filename)
-        )
-        return LoadedImage(cgImage: cgImage, orientation: .up, metadata: metadata)
-#else
+        // ImageIO decodes every raster format. Bytes it cannot read are not
+        // handed to NSImage, which would also open a PDF named like an image
+        // here, outside the sandboxed PDF parser service.
         return nil
-#endif
     }
 
     private static func bestCGImage(from source: CGImageSource) -> CGImage? {

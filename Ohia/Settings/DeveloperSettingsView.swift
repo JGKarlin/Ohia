@@ -1,9 +1,11 @@
 // Ohia/Settings/DeveloperSettingsView.swift
 // Development and testing controls — reset state, inspect pipeline.
 
+import AppKit
 import Darwin
 import Foundation
 import Observation
+import os
 import SwiftUI
 import SwiftData
 import OhiaCore
@@ -699,10 +701,89 @@ enum DeveloperCredentialResetter {
         "ohia-mcp-firecrawl-oauth",
     ]
 
+    /// Items one keychain service kept after a reset.
+    struct Leftover: Equatable, Sendable {
+        let service: String
+        let count: Int
+    }
+
     /// Removes only generic-password items whose service is owned by Ohia.
-    static func resetAll() throws {
+    /// Items the keychain refuses to release (for example ones whose access
+    /// control trusts a different build) are reported, not fatal: the reset
+    /// still clears everything it can, and the caller tells the user exactly
+    /// which services still hold items.
+    @discardableResult
+    static func resetAll() -> [Leftover] {
+        var leftovers: [Leftover] = []
         for service in services {
-            try KeychainHelpers.deleteAll(service: service)
+            // No keychain prompts at launch: an item that would need the
+            // user's password is reported afterwards instead of raising one
+            // dialog per item.
+            let result = KeychainHelpers.sweep(service: service, allowUserInteraction: false)
+            guard result.remaining > 0 else { continue }
+            leftovers.append(Leftover(service: service, count: result.remaining))
+            Logger(subsystem: "org.jgkarlin.Ohia", category: "reset").error(
+                "Keychain kept \(result.remaining, privacy: .public) item(s) for \(service, privacy: .public): OSStatus \(result.lastFailureStatus ?? 0, privacy: .public)"
+            )
+        }
+        return leftovers
+    }
+}
+
+/// Tells the user, once the app has launched, about keychain items a reset
+/// could not remove.
+@MainActor
+enum ResetCredentialCleanupNotice {
+    private static var observer: NSObjectProtocol?
+
+    static func schedule(leftovers: [DeveloperCredentialResetter.Leftover]) {
+        guard !leftovers.isEmpty, observer == nil else { return }
+        observer = NotificationCenter.default.addObserver(
+            forName: NSApplication.didFinishLaunchingNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            MainActor.assumeIsolated {
+                if let observer {
+                    NotificationCenter.default.removeObserver(observer)
+                }
+                observer = nil
+                present(leftovers: leftovers)
+            }
+        }
+    }
+
+    static func message(for leftovers: [DeveloperCredentialResetter.Leftover]) -> String {
+        let total = leftovers.reduce(0) { $0 + $1.count }
+        let names = leftovers.map(\.service)
+        let nameList: String
+        switch names.count {
+        case 0, 1:
+            nameList = names.first ?? ""
+        case 2:
+            nameList = "\(names[0]) and \(names[1])"
+        default:
+            nameList = names.dropLast().joined(separator: ", ") + ", and " + names[names.count - 1]
+        }
+        let subject = total == 1
+            ? "One saved credential could not be removed from your login keychain."
+            : "\(total) saved credentials could not be removed from your login keychain."
+        let instruction = total == 1
+            ? "In Keychain Access, delete the item named \(nameList)."
+            : "In Keychain Access, delete the items named \(nameList)."
+        return subject + " " + instruction
+    }
+
+    private static func present(leftovers: [DeveloperCredentialResetter.Leftover]) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Ohia was reset"
+        alert.informativeText = message(for: leftovers)
+        alert.addButton(withTitle: "Open Keychain Access")
+        alert.addButton(withTitle: "OK")
+        if alert.runModal() == .alertFirstButtonReturn,
+           let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.keychainaccess") {
+            NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
         }
     }
 }

@@ -39,6 +39,13 @@ enum AskMemoryTokenizer {
                     let bigram = String(characters[index...index + 1])
                     if bigram.contains(where: isCJK) { tokens.insert(bigram) }
                 }
+                // Latin letters and digits written inside the run, such as a
+                // drawing or order number (図面番号A-204の), are tokens in
+                // their own right, as they would be in spaced text.
+                for embedded in run.split(whereSeparator: isCJK) where embedded.count >= 3 {
+                    guard tokens.count < maxTokens else { break }
+                    tokens.insert(String(embedded))
+                }
             } else if run.count >= 3 {
                 tokens.insert(String(run))
             }

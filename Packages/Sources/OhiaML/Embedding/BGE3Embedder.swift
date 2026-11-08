@@ -6,20 +6,24 @@ import Tokenizers
 /// Concrete bge-m3 embedding provider backed by the converted Core ML package.
 public final class BGE3Embedder: RuntimeLaneLimitedEmbeddingProvider, @unchecked Sendable {
     public static var embeddingDimension: Int { 1024 }
-    // v3 keeps the body-only-context shape but embeds only the message's own
-    // text, excluding quoted reply/forward history so citations do not attach
-    // a quoted sender's facts to the later reply that quoted them.
-    // The model itself is unchanged. The version bump segregates pre- and post-cutover
-    // vectors in the index and routes existing rows through `EmbeddingMigrationCoordinator`
-    // for re-embedding under the new document shape.
-    public static var embeddingVersion: String { "bge-m3-v3-original-body" }
+    // v4 sizes every document to the model's 512-token window with the model's
+    // own tokenizer (`EmbeddingChunker`), so long bodies, attachments, and text
+    // without spaces (Japanese, Chinese, Korean) are chunked instead of cut off.
+    // v3 introduced embedding only the message's own text, excluding quoted
+    // reply/forward history. The model itself is unchanged. The version bump
+    // segregates pre- and post-cutover vectors in the index and routes existing
+    // rows through `EmbeddingMigrationCoordinator` for re-embedding.
+    public static var embeddingVersion: String { "bge-m3-v4-token-windows" }
 
     public var embeddingDimension: Int { Self.embeddingDimension }
     public var embeddingVersion: String { Self.embeddingVersion }
 
     public var parallelLaneCount: Int { lanes.count }
 
+    public var documentTokenizer: (any EmbeddingDocumentTokenizing)? { tokenCounter }
+
     private let lanes: [CoreMLEmbedder]
+    private let tokenCounter: EmbeddingModelTokenizer
 
     public init(
         downloader: BGE3ModelDownloader,
@@ -45,6 +49,9 @@ public final class BGE3Embedder: RuntimeLaneLimitedEmbeddingProvider, @unchecked
             ))
         }
         self.lanes = builtLanes
+        // Measured on the last lane: single-text embeds and the first share of
+        // every batch use lane 0, so counting contends least here.
+        self.tokenCounter = builtLanes[builtLanes.count - 1].makeDocumentTokenizer()
 
         guard self.lanes[0].embed("Ohia embedding startup validation.") != nil else {
             throw EmbedderError.invalidEmbeddingOutput
@@ -129,7 +136,7 @@ public final class BGE3Embedder: RuntimeLaneLimitedEmbeddingProvider, @unchecked
         return 1
     }
 
-    private static func loadTokenizer(from directory: URL) throws -> Tokenizer {
+    static func loadTokenizer(from directory: URL) throws -> Tokenizer {
         let tokenizerConfigURL = directory.appendingPathComponent("tokenizer_config.json")
         let tokenizerDataURL = directory.appendingPathComponent("tokenizer.json")
         let fm = FileManager.default

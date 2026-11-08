@@ -1,15 +1,12 @@
 import Foundation
 
 #if canImport(Vision)
+import ImageIO
 import Vision
 #endif
 
 #if canImport(AppKit)
 import AppKit
-#endif
-
-#if canImport(PDFKit)
-import PDFKit
 #endif
 
 public enum AttachmentExtractor {
@@ -172,13 +169,17 @@ public enum AttachmentExtractor {
         }
     }
 
-    private static func extractPDF(data: Data, filename: String) -> AttachmentExtractionResult {
+    static func extractPDF(
+        data: Data,
+        filename: String,
+        liteParse: LiteParsePDFExtractor = LiteParsePDFExtractor()
+    ) -> AttachmentExtractionResult {
         do {
-            let extraction = try LiteParsePDFExtractor().extract(data: data, filename: filename)
+            let extraction = try liteParse.extract(data: data, filename: filename)
             return .completed(
                 text: extraction.text,
                 kind: .pdf,
-                method: .liteParsePDF,
+                method: extraction.engine == .pdfKit ? .pdfKit : .liteParsePDF,
                 parserVersion: extraction.parserVersion,
                 embeddingText: extraction.embeddingText,
                 normalizedIRJSON: extraction.normalizedIRJSON,
@@ -186,11 +187,31 @@ public enum AttachmentExtractor {
                 structureUnitKind: "page",
                 structureUnitCount: extraction.pageCount
             )
+        } catch LiteParsePDFExtractor.ExtractorError.encrypted(let pageCount) {
+            return .failure(
+                kind: .pdf,
+                status: .encryptedOrPasswordProtected,
+                method: .pdfKit,
+                parserVersion: "pdfkit",
+                failureReason: LiteParsePDFExtractor.ExtractorError.encrypted(pageCount: pageCount).localizedDescription,
+                structureUnitKind: "page",
+                structureUnitCount: pageCount
+            )
+        } catch LiteParsePDFExtractor.ExtractorError.pdfKitEmptyText(let pageCount) {
+            return .failure(
+                kind: .pdf,
+                status: .emptyText,
+                method: .pdfKit,
+                parserVersion: "pdfkit",
+                failureReason: LiteParsePDFExtractor.ExtractorError.pdfKitEmptyText(pageCount: pageCount).localizedDescription,
+                structureUnitKind: "page",
+                structureUnitCount: pageCount
+            )
         } catch {
-            if let fallback = extractPDFWithPDFKit(data: data, filename: filename) {
-                return fallback
-            }
-
+            // Nothing was read: the service could not be reached, timed out,
+            // or could open the PDF with neither LiteParse nor PDFKit. The PDF
+            // is never opened in this process instead; a parse failure stays
+            // retryable.
             let reason = error.localizedDescription
             let status: AttachmentExtractionStatus = reason.lowercased().contains("password")
                 || reason.lowercased().contains("encrypted")
@@ -205,91 +226,6 @@ public enum AttachmentExtractor {
                 structureUnitKind: "page"
             )
         }
-    }
-
-    private static func extractPDFWithPDFKit(data: Data, filename: String) -> AttachmentExtractionResult? {
-#if canImport(PDFKit)
-        guard let document = PDFDocument(data: data) else {
-            return .failure(
-                kind: .pdf,
-                status: .parseFailed,
-                method: .pdfKit,
-                parserVersion: "pdfkit",
-                failureReason: "PDFKit could not open the PDF",
-                structureUnitKind: "page"
-            )
-        }
-
-        if document.isEncrypted && document.isLocked {
-            return .failure(
-                kind: .pdf,
-                status: .encryptedOrPasswordProtected,
-                method: .pdfKit,
-                parserVersion: "pdfkit",
-                failureReason: "PDF is encrypted or password-protected",
-                structureUnitKind: "page",
-                structureUnitCount: document.pageCount
-            )
-        }
-
-        let pages = (0..<document.pageCount).map { index -> PDFPageIR in
-            let pdfPage = document.page(at: index)
-            let bounds = pdfPage?.bounds(for: .mediaBox) ?? .zero
-            let text = pdfPage?
-                .string?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let blocks = text.isEmpty ? [] : [
-                PDFBlock(
-                    id: "\(filename):pdfkit:\(index + 1):0",
-                    text: text,
-                    blockType: .paragraph,
-                    bbox: BoundingBox(
-                        x: Double(bounds.origin.x),
-                        y: Double(bounds.origin.y),
-                        width: Double(bounds.width),
-                        height: Double(bounds.height)
-                    ),
-                    order: 0,
-                    source: .native
-                )
-            ]
-            return PDFPageIR(
-                pageNumber: index + 1,
-                width: Double(bounds.width),
-                height: Double(bounds.height),
-                blocks: blocks
-            )
-        }
-        let ir = PDFDocumentIR(fileName: filename, pageCount: document.pageCount, pages: pages)
-        let projection = PDFRAGNormalizer.normalize(ir)
-        let text = projection.plainText.trimmingCharacters(in: .whitespacesAndNewlines)
-
-        guard !text.isEmpty else {
-            return .failure(
-                kind: .pdf,
-                status: .emptyText,
-                method: .pdfKit,
-                parserVersion: "pdfkit",
-                failureReason: "PDFKit found no extractable text",
-                structureUnitKind: "page",
-                structureUnitCount: document.pageCount
-            )
-        }
-
-        return .completed(
-            text: text,
-            kind: .pdf,
-            method: .pdfKit,
-            parserVersion: "pdfkit",
-            embeddingText: projection.embeddingText,
-            normalizedIRJSON: jsonString(ir),
-            ragDocumentJSON: jsonString(projection.ragDocument),
-            structureUnitKind: "page",
-            structureUnitCount: document.pageCount
-        )
-#else
-        return nil
-#endif
     }
 
     private static func extractOOXML(data: Data, kind: DocumentKind, filename: String) -> AttachmentExtractionResult {
@@ -397,7 +333,7 @@ public enum AttachmentExtractor {
     private static func extractImage(data: Data, kind: DocumentKind) -> AttachmentExtractionResult {
 #if canImport(Vision)
         do {
-            guard let cgImage = cgImageFromData(data) else {
+            guard let (cgImage, orientation) = decodedImage(data) else {
                 return .failure(
                     kind: kind,
                     status: .parseFailed,
@@ -422,9 +358,12 @@ public enum AttachmentExtractor {
                 }
             }
             request.recognitionLevel = .accurate
-            request.recognitionLanguages = ["en-US", "ja-JP"]
+            // Vision picks the recognition model for each image. A fixed
+            // language list reads only scripts its first language's model
+            // covers, so text in any other script is lost.
+            request.automaticallyDetectsLanguage = true
 
-            let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+            let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:])
             try handler.perform([request])
 
             if let capturedError { throw capturedError }
@@ -452,14 +391,17 @@ public enum AttachmentExtractor {
     }
 
 #if canImport(Vision)
-    private static func cgImageFromData(_ data: Data) -> CGImage? {
-#if canImport(AppKit)
-        guard let nsImage = NSImage(data: data) else { return nil }
-        var rect = NSRect(origin: .zero, size: nsImage.size)
-        return nsImage.cgImage(forProposedRect: &rect, context: nil, hints: nil)
-#else
-        return nil
-#endif
+    /// The first image in `data` and its EXIF orientation, decoded with
+    /// ImageIO, which reads every raster format but not PDF. NSImage is not
+    /// used: it would also open a PDF named like an image here, outside the
+    /// sandboxed PDF parser service.
+    private static func decodedImage(_ data: Data) -> (CGImage, CGImagePropertyOrientation)? {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
+        let orientation = (properties?[kCGImagePropertyOrientation] as? UInt32)
+            .flatMap(CGImagePropertyOrientation.init(rawValue:)) ?? .up
+        return (image, orientation)
     }
 #endif
 }

@@ -106,17 +106,89 @@ public enum KeychainHelpers {
         }
     }
 
-    public static func deleteAll(
+    /// The outcome of removing every item for one service.
+    public struct SweepResult: Equatable, Sendable {
+        /// Items the keychain refused to delete.
+        public let remaining: Int
+        /// The status of the last refused deletion, for diagnostics.
+        public let lastFailureStatus: OSStatus?
+
+        public init(remaining: Int, lastFailureStatus: OSStatus?) {
+            self.remaining = remaining
+            self.lastFailureStatus = lastFailureStatus
+        }
+    }
+
+    /// Removes every generic-password item for `service`, one item at a time.
+    /// A bulk `SecItemDelete` on the macOS file-based keychain removes only
+    /// the first match, so each item is enumerated and deleted by reference.
+    /// An item the keychain will not release (for example one whose access
+    /// control trusts a different build) no longer blocks the removal of the
+    /// others; the result reports how many items are left instead of throwing.
+    public static func sweep(
         service: String,
         allowUserInteraction: Bool = allowsUserInteractionByDefault
-    ) throws {
-        let query = authenticatedQuery([
+    ) -> SweepResult {
+        var matches: CFTypeRef?
+        let listing = SecItemCopyMatching(authenticatedQuery([
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
-        ], allowUserInteraction: allowUserInteraction)
-        let status = SecItemDelete(query as CFDictionary)
-        if status != errSecSuccess && status != errSecItemNotFound {
-            throw Error.unexpected(status)
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnRef as String: true,
+        ], allowUserInteraction: allowUserInteraction) as CFDictionary, &matches)
+        switch listing {
+        case errSecSuccess:
+            break
+        case errSecItemNotFound:
+            return SweepResult(remaining: 0, lastFailureStatus: nil)
+        default:
+            return SweepResult(remaining: remainingCount(service: service), lastFailureStatus: listing)
+        }
+
+        let items: [AnyObject]
+        if let array = matches as? [AnyObject] {
+            items = array
+        } else if let single = matches {
+            items = [single]
+        } else {
+            items = []
+        }
+
+        var remaining = 0
+        var lastFailure: OSStatus?
+        for item in items {
+            let status = SecItemDelete(authenticatedQuery([
+                kSecClass as String: kSecClassGenericPassword,
+                kSecMatchItemList as String: [item],
+            ], allowUserInteraction: allowUserInteraction) as CFDictionary)
+            if status != errSecSuccess && status != errSecItemNotFound {
+                remaining += 1
+                lastFailure = status
+            }
+        }
+        return SweepResult(remaining: remaining, lastFailureStatus: lastFailure)
+    }
+
+    /// Counts the items left for `service` without prompting. An unreadable
+    /// keychain counts as one item left, since none can be shown to be gone.
+    private static func remainingCount(service: String) -> Int {
+        let context = LAContext()
+        context.interactionNotAllowed = true
+        var matches: CFTypeRef?
+        let status = SecItemCopyMatching([
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecMatchLimit as String: kSecMatchLimitAll,
+            kSecReturnAttributes as String: true,
+            kSecUseAuthenticationContext as String: context,
+        ] as CFDictionary, &matches)
+        switch status {
+        case errSecSuccess:
+            return max((matches as? [Any])?.count ?? 1, 1)
+        case errSecItemNotFound:
+            return 0
+        default:
+            return 1
         }
     }
 

@@ -1,8 +1,10 @@
 import Darwin
 import Foundation
 import OhiaCore
+import OhiaIngest
 import OhiaMail
 import OhiaML
+import OhiaPDFParsing
 import OSLog
 import XPC
 
@@ -523,6 +525,20 @@ private final class OhiaWorkerXPCService: NSObject,
                 } else {
                     messagesProvider = UnavailableMessagesTranscriptProvider()
                     mailCredentialResolver = UnavailableMailCredentialResolver()
+                }
+                if let workerConnection {
+                    // PDFs this worker reads (mail attachments, Composer
+                    // sources) are parsed and rendered in the app's sandboxed
+                    // PDF parser service, never in this process.
+                    let pdfParser = WorkerPDFParserClient(connection: workerConnection)
+                    PDFParserRoute.installBrokered(PDFParserRoute.Service(
+                        parse: { pdf, maxPages in
+                            pdfParser.parse(pdf, maxPages: maxPages)
+                        },
+                        renderPages: { pdf, maxPages, maxPixelSize in
+                            pdfParser.renderPages(pdf, maxPages: maxPages, maxPixelSize: maxPixelSize)
+                        }
+                    ))
                 }
                 let runtime = try OhiaWorkerRuntime(
                     role: self.role,

@@ -55,8 +55,10 @@ enum SandboxResetCoordinator {
 
         // Credentials and defaults live outside the reset roots. Clear them
         // only after the durable marker and every deletion target have been
-        // validated. If this fails, the marker and private files remain so the
-        // exact reset can be retried on the next launch.
+        // validated. If this throws, the marker and private files remain so
+        // the exact reset can be retried on the next launch. (The app's
+        // keychain sweep does not throw for items the keychain refuses to
+        // release; it reports them to the user instead.)
         try prepareExternalStateForDeletion()
 
         try removeUnverifiedPublicModels(

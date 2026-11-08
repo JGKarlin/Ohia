@@ -16,9 +16,21 @@ import OhiaIngest
 final class SMTPConfigFormState {
     // Inputs
     var emailAddress: String
-    var host: String = ""
+    var host: String = "" {
+        didSet {
+            if security == SMTPSecurity.none, !allowsUnencryptedSecurity {
+                security = .starttls
+            }
+        }
+    }
     var portText: String = ""
     var security: SMTPSecurity = .starttls
+
+    /// An unencrypted session is offered only for a relay on this Mac (a
+    /// local bridge); `SMTPClient` refuses one to any other host.
+    var allowsUnencryptedSecurity: Bool {
+        SMTPClient.isLoopbackHost(host)
+    }
     var username: String = ""
     var authMethod: SMTPAuthMethod = .password
     var password: String = ""
@@ -204,7 +216,12 @@ final class SMTPConfigFormState {
         self.emailAddress = account.emailAddress
         self.host = account.smtpHost ?? ""
         self.portText = account.smtpPort.map(String.init) ?? ""
-        self.security = account.smtpSecurity ?? .starttls
+        // Unencrypted sessions are kept only for a relay on this Mac; a stored
+        // unencrypted setting for any other host reopens as STARTTLS and is
+        // re-verified when the account is saved.
+        self.security = account.smtpSecurity.flatMap {
+            $0 == SMTPSecurity.none && !allowsUnencryptedSecurity ? nil : $0
+        } ?? .starttls
         self.username = account.smtpUsername ?? account.emailAddress
         self.authMethod = account.smtpAuthMethod ?? .password
         self.imapHostHint = account.imapHost

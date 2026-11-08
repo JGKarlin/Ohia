@@ -3457,4 +3457,5 @@ https://nodejs.org
 The Node.js runtime is distributed with its complete license, including the
 licenses of its bundled dependencies, at
 Vendor/LiteParseHelper/node/LICENSE (inside the app at
-Ohia.app/Contents/Resources/LiteParseHelper/node/LICENSE).
+Ohia.app/Contents/XPCServices/OhiaPDFParser.xpc/Contents/Resources/
+LiteParseHelper/node/LICENSE).

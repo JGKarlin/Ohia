@@ -67,6 +67,7 @@ struct LockedEmailHTMLView: View {
         )
         DarkCanvasEmailWebView(
             html: displayHTML,
+            blocksRemoteContent: !loadsRemoteImages,
             reloadKey: reloadKey,
             backgroundHex: backgroundHex,
             cssColorScheme: colorScheme == .dark ? "dark" : "light",
@@ -727,15 +728,12 @@ struct LockedEmailHTMLView: View {
         </html>
         """
     }
-
-    fileprivate static func shouldOpenOutsideCard(_ url: URL) -> Bool {
-        guard let scheme = url.scheme?.lowercased() else { return false }
-        return scheme == "http" || scheme == "https" || scheme == "mailto" || scheme == "tel"
-    }
 }
 
 private struct DarkCanvasEmailWebView: NSViewRepresentable {
     let html: String
+    /// Remote-content posture enforced inside WebKit (`EmailWebContentPolicy`).
+    let blocksRemoteContent: Bool
     let reloadKey: LockedEmailHTMLView.ReloadKey
     let backgroundHex: String
     let cssColorScheme: String
@@ -797,7 +795,12 @@ private struct DarkCanvasEmailWebView: NSViewRepresentable {
         context.coordinator.loadedKey = reloadKey
         // Always an `about:blank` base: cid: images are inlined as data: URLs
         // and remote images are absolute, so a file:// base is never needed.
-        webView.loadHTMLString(html, baseURL: LockedEmailHTMLView.aboutBlankURL)
+        context.coordinator.loader.load(
+            html,
+            blocksRemoteContent: blocksRemoteContent,
+            baseURL: LockedEmailHTMLView.aboutBlankURL,
+            into: webView
+        )
     }
 
     static func dismantleNSView(_ webView: WKWebView, coordinator: Coordinator) {
@@ -837,6 +840,7 @@ private struct DarkCanvasEmailWebView: NSViewRepresentable {
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         var parent: DarkCanvasEmailWebView
         var loadedKey: LockedEmailHTMLView.ReloadKey?
+        let loader = EmailWebViewLoader()
         private var lastMeasuredCSSHeight: CGFloat?
         private var lastMeasurementUsedBoundedInternalScroll = false
 
@@ -885,14 +889,15 @@ private struct DarkCanvasEmailWebView: NSViewRepresentable {
             decidePolicyFor navigationAction: WKNavigationAction,
             decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
         ) {
-            guard navigationAction.navigationType == .linkActivated,
-                  let url = navigationAction.request.url,
-                  LockedEmailHTMLView.shouldOpenOutsideCard(url) else {
+            switch EmailWebContentPolicy.navigationDecision(for: navigationAction) {
+            case .allow:
                 decisionHandler(.allow)
-                return
+            case .cancel:
+                decisionHandler(.cancel)
+            case .openExternally(let url):
+                NSWorkspace.shared.open(url)
+                decisionHandler(.cancel)
             }
-            NSWorkspace.shared.open(url)
-            decisionHandler(.cancel)
         }
     }
 }

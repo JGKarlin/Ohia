@@ -39,6 +39,13 @@ public final class CoreMLEmbedder: EmbeddingProvider, @unchecked Sendable {
         self.maxSequenceLength = maxSequenceLength
     }
 
+    /// A counter over this embedder's tokenizer that shares its lock, so
+    /// documents can be measured exactly as `featureProvider(for:)` will
+    /// tokenize them.
+    public func makeDocumentTokenizer() -> EmbeddingModelTokenizer {
+        EmbeddingModelTokenizer(tokenizer: tokenizer, lock: lock, maximumInputTokens: maxSequenceLength)
+    }
+
     public static func isEffectivelyEmpty(_ text: String) -> Bool {
         text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -152,7 +159,9 @@ public final class CoreMLEmbedder: EmbeddingProvider, @unchecked Sendable {
         return normSquared <= 1e-12
     }
 
-    private static func normalizedTextForTokenization(_ text: String) -> String {
+    /// Shared with `EmbeddingModelTokenizer` so token counts used for chunking
+    /// match the tokens this adapter feeds the model.
+    static func normalizedTextForTokenization(_ text: String) -> String {
         let decomposed = text
             .precomposedStringWithCompatibilityMapping
             .decomposedStringWithCanonicalMapping

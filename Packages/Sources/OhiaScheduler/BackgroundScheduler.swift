@@ -1510,6 +1510,30 @@ public final class BackgroundScheduler: @unchecked Sendable {
         return steady
     }
 
+    /// Priority of the next `.generateDraft` pass after a batch pass made
+    /// progress. A compose draft is always user-initiated, and composing from
+    /// scratch runs as untargeted passes (collecting sources, then questions,
+    /// then the draft), so while any compose draft still owes work the next
+    /// pass stays in the user-initiated lane ahead of background indexing and
+    /// interpretation. Otherwise the continuation is an untargeted
+    /// background pass.
+    ///
+    /// The pass itself ran in a fresh execution context
+    /// (`pipelineExecutionContext`), so owed work is read the same way: from
+    /// committed state, never from Draft values a long-lived scheduler
+    /// context may still hold.
+    @MainActor
+    static func generateDraftContinuationPriority(
+        container: ModelContainer,
+        now: Date = Date()
+    ) -> Int {
+        let composeWorkPending = DraftGenerationOrchestrator.hasPendingComposeWork(
+            context: ModelContext(container),
+            now: now
+        )
+        return composeWorkPending ? ComposerDraftScheduling.userInitiatedPriority : 6
+    }
+
     @MainActor
     private func requeueBatchJobIfNeeded(
         type: JobType,
@@ -1523,7 +1547,7 @@ public final class BackgroundScheduler: @unchecked Sendable {
         case .embed:
             priority = 5
         case .generateDraft:
-            priority = 6
+            priority = Self.generateDraftContinuationPriority(container: context.container)
         case .index:
             guard allowsVisiblePlacement() else { return }
             let hasUnplaced = ((try? vectorStore.unplacedVectorIds(limit: 1)) ?? []).isEmpty == false

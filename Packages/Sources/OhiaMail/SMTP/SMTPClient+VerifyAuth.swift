@@ -13,6 +13,7 @@ extension SMTPClient {
         host: String, port: Int, security: SMTPSecurity,
         auth: Auth
     ) async throws {
+        try Self.requireEncryptedTransport(host: host, security: security)
         try await transport.connect(host: host, port: port, tls: security == .tls)
         let closer = TransportCloser(transport: transport)
         defer { Task { await closer.close() } }

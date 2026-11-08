@@ -95,7 +95,6 @@
 				8C91365E2F8F9D9300CD3696 /* Frameworks */,
 				8C91365F2F8F9D9300CD3696 /* Resources */,
 				8C7A0B132FA7000000F00D04 /* Register Google OAuth Redirect Scheme */,
-				8C7A0B112FA7000000F00D02 /* Copy LiteParse Helper */,
 				8C7A0B122FA7000000F00D03 /* Build Worker Helpers with Xcode */,
 			);
 			buildRules = (
@@ -278,28 +277,6 @@
 			shellPath = /bin/sh;
 			shellScript = "set -euo pipefail\nconfig=debug\nif [ \"${CONFIGURATION:-Debug}\" = \"Release\" ]; then\n    config=release\nfi\nscratch=\"$DERIVED_FILE_DIR/OhiaWorkerBuild\"\nservices_root=\"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/XPCServices\"\nretrieval_entitlements=\"$SRCROOT/Ohia/OhiaRetrievalWorker.entitlements\"\ngenerative_entitlements=\"$SRCROOT/Ohia/OhiaGenerativeWorker.entitlements\"\nmessages_reader_entitlements=\"$SRCROOT/Ohia/OhiaMessagesReader.entitlements\"\nmlx_resource_bundle=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/mlx-swift_Cmlx.bundle\"\nsign_identity=\"${EXPANDED_CODE_SIGN_IDENTITY:--}\"\n/bin/rm -f \"$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/OhiaMessagesReader\" \"$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/OhiaRetrievalWorker\" \"$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/OhiaGenerativeWorker\"\nbuild_service() {\n    local product=\"$1\"\n    local plist=\"$2\"\n    local entitlements=\"${3:-}\"\n    local includes_mlx_resources=\"${4:-0}\"\n    local worker=\"$scratch/$config/$product\"\n    local bundle=\"$services_root/$product.xpc\"\n    local contents=\"$bundle/Contents\"\n    local executable_dir=\"$contents/MacOS\"\n    /usr/bin/swift build --package-path \"$SRCROOT/Packages\" --product \"$product\" -c \"$config\" --scratch-path \"$scratch\"\n    /bin/rm -rf \"$bundle\"\n    /bin/mkdir -p \"$executable_dir\"\n    /bin/cp -f \"$plist\" \"$contents/Info.plist\"\n    /bin/cp -f \"$worker\" \"$executable_dir/$product\"\n    /bin/chmod 755 \"$executable_dir/$product\"\n    if [ \"$product\" != \"OhiaMessagesReader\" ]; then\n        local resource_bundle\n        local resource_name\n        /bin/mkdir -p \"$contents/Resources\"\n        for resource_bundle in \"$scratch/$config\"/*.bundle; do\n            [ -d \"$resource_bundle\" ] || continue\n            resource_name=\"${resource_bundle##*/}\"\n            /usr/bin/ditto \"$resource_bundle\" \"$contents/Resources/$resource_name\"\n        done\n    fi\n    if [ \"$includes_mlx_resources\" = \"1\" ]; then\n        if [ ! -d \"$mlx_resource_bundle\" ]; then\n            echo \"error: missing MLX Metal resource bundle at $mlx_resource_bundle\" >&2\n            exit 1\n        fi\n        /bin/mkdir -p \"$contents/Resources\"\n        /usr/bin/ditto \"$mlx_resource_bundle\" \"$contents/Resources/mlx-swift_Cmlx.bundle\"\n    fi\n    if [ -n \"$entitlements\" ]; then\n        /usr/bin/codesign --force --sign \"$sign_identity\" --options runtime --entitlements \"$entitlements\" --timestamp=none \"$bundle\"\n    else\n        /usr/bin/codesign --force --sign \"$sign_identity\" --options runtime --timestamp=none \"$bundle\"\n    fi\n}\nbuild_service OhiaMessagesReader \"$SRCROOT/Packages/XPCServices/OhiaMessagesReader-Info.plist\" \"$messages_reader_entitlements\"\nbuild_service OhiaRetrievalWorker \"$SRCROOT/Packages/XPCServices/OhiaRetrievalWorker-Info.plist\" \"$retrieval_entitlements\"\nbuild_service OhiaGenerativeWorker \"$SRCROOT/Packages/XPCServices/OhiaGenerativeWorker-Info.plist\" \"$generative_entitlements\" 1\n";
 		};
-		8C7A0B112FA7000000F00D02 /* Copy LiteParse Helper */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-				"$(SRCROOT)/Vendor/LiteParseHelper",
-				"$(SRCROOT)/tools/verify-liteparse-helper.sh",
-			);
-			name = "Copy LiteParse Helper";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/LiteParseHelper",
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "set -euo pipefail\nsrc=\"$SRCROOT/Vendor/LiteParseHelper\"\ndst=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/LiteParseHelper\"\nif [ ! -d \"$src\" ]; then\n    echo \"error: LiteParse helper is required for Ohia builds: $src\" >&2\n    exit 1\nfi\nmkdir -p \"$(dirname \"$dst\")\"\nrm -rf \"$dst\"\n/bin/cp -Rp \"$src\" \"$dst\"\nfor executable in \"$dst/lit\" \"$dst/bin/lit\" \"$dst/node/bin/node\"; do\n    if [ -f \"$executable\" ]; then\n        /bin/chmod 755 \"$executable\"\n    fi\ndone\n\"$SRCROOT/tools/verify-liteparse-helper.sh\" \"$dst\"\n# Release builds are notarized: every signature needs a secure timestamp and\n# the hardened runtime. Node keeps only the exceptions V8 and native addons need.\ntimestamp_flag=\"--timestamp=none\"\nif [ \"${CONFIGURATION:-Debug}\" = \"Release\" ]; then\n    timestamp_flag=\"--timestamp\"\nfi\nif [ -n \"${EXPANDED_CODE_SIGN_IDENTITY:-}\" ]; then\n    /usr/bin/find \"$dst\" -type f \\( -name \"*.node\" -o -name \"*.dylib\" \\) -exec /usr/bin/codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" --options runtime \"$timestamp_flag\" {} \\;\n    for executable in \"$dst/lit\" \"$dst/bin/lit\"; do\n        if [ -f \"$executable\" ]; then\n            /usr/bin/codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" \"$timestamp_flag\" \"$executable\"\n        fi\n    done\n    /usr/bin/codesign --force --sign \"$EXPANDED_CODE_SIGN_IDENTITY\" --options runtime --entitlements \"$SRCROOT/Ohia/LiteParseNode.entitlements\" \"$timestamp_flag\" \"$dst/node/bin/node\"\nfi\n";
-		};
 		8C7A0B122FA7000000F00D03 /* Build Worker Helpers with Xcode */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -310,6 +287,12 @@
 			);
 			inputPaths = (
 				"$(SRCROOT)/tools/build-worker-helpers.sh",
+				"$(SRCROOT)/tools/verify-liteparse-helper.sh",
+				"$(SRCROOT)/Vendor/LiteParseHelper",
+				"$(SRCROOT)/Ohia/LiteParseNode.entitlements",
+				"$(SRCROOT)/Ohia/OhiaPDFParser.entitlements",
+				"$(SRCROOT)/Packages/XPCServices/OhiaPDFParser-Info.plist",
+				"$(SRCROOT)/Packages/Sources/OhiaPDFParser/OhiaPDFParserMain.swift",
 				"$(SRCROOT)/Ohia/OhiaMessagesReader.entitlements",
 				"$(SRCROOT)/Ohia/OhiaRetrievalWorker.entitlements",
 				"$(SRCROOT)/Ohia/OhiaGenerativeWorker.entitlements",
@@ -331,6 +314,7 @@
 			);
 			outputPaths = (
 				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/XPCServices/OhiaMessagesReader.xpc",
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/XPCServices/OhiaPDFParser.xpc",
 				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/XPCServices/OhiaRetrievalWorker.xpc",
 				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/XPCServices/OhiaGenerativeWorker.xpc",
 			);
@@ -486,7 +470,7 @@
 				CODE_SIGN_ENTITLEMENTS = Ohia/Ohia.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 3T72U4Q7A5;
 				ENABLE_APP_SANDBOX = YES;
@@ -499,7 +483,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.9.0;
+				MARKETING_VERSION = 0.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.jgkarlin.Ohia;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -521,7 +505,7 @@
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 2;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 3T72U4Q7A5;
 				ENABLE_APP_SANDBOX = YES;
@@ -534,7 +518,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.9.0;
+				MARKETING_VERSION = 0.10.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.jgkarlin.Ohia;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;

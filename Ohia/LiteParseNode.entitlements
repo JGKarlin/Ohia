@@ -6,8 +6,8 @@
 		Hardened-runtime exceptions for the bundled Node.js that runs the
 		LiteParse document helper. V8 compiles JavaScript at run time, and
 		Node loads LiteParse's native parser addon and its PDFium dylib.
-		The process runs inside Ohia's sandbox, which it inherits as a child
-		of the app.
+		The process runs only inside OhiaPDFParser.xpc and inherits that
+		service's sandbox: no network, no app group, no user files.
 	-->
 	<key>com.apple.security.cs.allow-jit</key>
 	<true/>

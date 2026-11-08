@@ -19,12 +19,18 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 EMBEDDER_COREML_REPO="JGKarlin/ohia-bge-m3-coreml"
+# Pinned commits; keep in sync with BGE3ModelDownloader.
+EMBEDDER_COREML_REVISION="cb67d6bcbdb0c68efc2448752717cbbf925034c6"
 EMBEDDER_TOKENIZER_REPO="BAAI/bge-m3"
+EMBEDDER_TOKENIZER_REVISION="5617a9f61b028005a4858fdac845db406aefb181"
 EMBEDDER_NAME="bge-m3"
 EMBEDDER_PACKAGE="bge-m3.mlpackage"
 
 RERANKER_COREML_REPO="JGKarlin/ohia-bge-reranker-v2-m3-coreml"
+# Pinned commits; keep in sync with CrossEncoderDownloader.
+RERANKER_COREML_REVISION="6b97037f17086b92a1339fdfc32be12a6e41baf0"
 RERANKER_TOKENIZER_REPO="BAAI/bge-reranker-v2-m3"
+RERANKER_TOKENIZER_REVISION="953dc6f6f85a1b2dbfca4c34a2796e7dde08d41e"
 RERANKER_NAME="bge-reranker-v2-m3"
 RERANKER_PACKAGE="bge-reranker-v2-m3.mlpackage"
 
@@ -100,7 +106,9 @@ fetch_model() {
   local name="$1"
   local package="$2"
   local coreml_repo="$3"
-  local tokenizer_repo="$4"
+  local coreml_revision="$4"
+  local tokenizer_repo="$5"
+  local tokenizer_revision="$6"
   local dir
   dir="$(bundle_dir "$name")"
 
@@ -112,6 +120,7 @@ fetch_model() {
   mkdir -p "$dir"
   printf 'Fetching %s Core ML package from %s\n' "$name" "$coreml_repo"
   hf download "$coreml_repo" \
+    --revision "$coreml_revision" \
     --include "${package}/**" \
     --exclude "${package}/.cache/**" \
     --local-dir "$dir"
@@ -123,6 +132,7 @@ fetch_model() {
     include_args+=(--include "$file")
   done
   hf download "$tokenizer_repo" \
+    --revision "$tokenizer_revision" \
     "${include_args[@]}" \
     --local-dir "$dir"
 
@@ -135,10 +145,14 @@ main() {
   cd "$REPO_ROOT"
 
   if [[ "$FETCH_EMBEDDER" -eq 1 ]]; then
-    fetch_model "$EMBEDDER_NAME" "$EMBEDDER_PACKAGE" "$EMBEDDER_COREML_REPO" "$EMBEDDER_TOKENIZER_REPO"
+    fetch_model "$EMBEDDER_NAME" "$EMBEDDER_PACKAGE" \
+      "$EMBEDDER_COREML_REPO" "$EMBEDDER_COREML_REVISION" \
+      "$EMBEDDER_TOKENIZER_REPO" "$EMBEDDER_TOKENIZER_REVISION"
   fi
   if [[ "$FETCH_RERANKER" -eq 1 ]]; then
-    fetch_model "$RERANKER_NAME" "$RERANKER_PACKAGE" "$RERANKER_COREML_REPO" "$RERANKER_TOKENIZER_REPO"
+    fetch_model "$RERANKER_NAME" "$RERANKER_PACKAGE" \
+      "$RERANKER_COREML_REPO" "$RERANKER_COREML_REVISION" \
+      "$RERANKER_TOKENIZER_REPO" "$RERANKER_TOKENIZER_REVISION"
   fi
 
   printf 'fetch-bundled-bge: done. Rebuild Ohia in Xcode to copy Models/ into the app bundle.\n'

@@ -476,8 +476,7 @@ public final class AppServices: @unchecked Sendable {
         )
         self.migrationCoordinator = EmbeddingMigrationCoordinator(
             registry: registry,
-            vectorStore: self.vectorStore,
-            canonicalStore: self.canonicalStore
+            vectorStore: self.vectorStore
         )
 
         // Engine selector: MLX/Qwen primary. Apple Intelligence remains a
@@ -640,7 +639,6 @@ public final class AppServices: @unchecked Sendable {
         toolRegistry.register(ToolRegistration(tool: CalendarTool(), tier: .native))
         toolRegistry.register(ToolRegistration(tool: ContactsTool(), tier: .native))
         toolRegistry.register(ToolRegistration(tool: RemindersTool(), tier: .native))
-        toolRegistry.register(ToolRegistration(tool: WebFetchTool(), tier: .native))
 
         // MCP sessions are lazy: one HTTPS connection per configured server,
         // opened on first use and kept for the app session.

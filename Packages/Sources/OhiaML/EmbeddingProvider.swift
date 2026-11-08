@@ -6,11 +6,19 @@ import OhiaCore
 public protocol EmbeddingProvider: Sendable {
     var embeddingDimension: Int { get }
     var embeddingVersion: String { get }
+    /// Counts tokens the way this provider's model reads a document, so
+    /// stored documents can be sized to its input window. `nil` when the
+    /// provider cannot embed documents right now: a query-only facade, or a
+    /// model that is not loaded. `EmbeddingOrchestrator` embeds nothing
+    /// without it.
+    var documentTokenizer: (any EmbeddingDocumentTokenizing)? { get }
     func embed(_ text: String) -> [Float]?
     func embedBatch(_ texts: [String]) -> [[Float]?]
 }
 
 public extension EmbeddingProvider {
+    var documentTokenizer: (any EmbeddingDocumentTokenizing)? { nil }
+
     func embedBatch(_ texts: [String]) -> [[Float]?] {
         texts.map { embed($0) }
     }
@@ -90,6 +98,10 @@ public final class SwappableEmbedder: RuntimeLaneLimitedEmbeddingProvider, @unch
     public var parallelLaneCount: Int {
         let activeProvider = currentProvider()
         return (activeProvider as? RuntimeLaneLimitedEmbeddingProvider)?.parallelLaneCount ?? 1
+    }
+
+    public var documentTokenizer: (any EmbeddingDocumentTokenizing)? {
+        currentProvider().documentTokenizer
     }
 
     public func embed(_ text: String) -> [Float]? {

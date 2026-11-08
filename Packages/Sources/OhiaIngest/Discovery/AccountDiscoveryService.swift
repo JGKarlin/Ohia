@@ -149,10 +149,7 @@ public final class AccountDiscoveryService: Sendable {
             let smtpUsername = nilIfBlank(part(parts, 7 + serverOffset))
             let smtpHost = nilIfBlank(part(parts, 8 + serverOffset))
             let smtpPort = intIfPresent(part(parts, 9 + serverOffset))
-            let smtpSecurity = smtpSecurity(
-                usesSSL: part(parts, 10 + serverOffset),
-                port: smtpPort
-            )
+            let smtpSecurity = smtpSecurity(usesSSL: part(parts, 10 + serverOffset))
 
             let emails = emailsString.components(separatedBy: "|")
                 .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -214,10 +211,11 @@ public final class AccountDiscoveryService: Sendable {
         return usesSSL ? .tls : .starttls
     }
 
-    private static func smtpSecurity(usesSSL raw: String?, port: Int?) -> SMTPSecurity? {
+    private static func smtpSecurity(usesSSL raw: String?) -> SMTPSecurity? {
         guard let usesSSL = boolIfPresent(raw) else { return nil }
-        if usesSSL { return .tls }
-        return port == 25 ? SMTPSecurity.none : .starttls
+        // A server without implicit TLS is reached over STARTTLS. Ohia never
+        // configures an unencrypted SMTP session from discovered settings.
+        return usesSSL ? .tls : .starttls
     }
 
     // MARK: - Metadata merge

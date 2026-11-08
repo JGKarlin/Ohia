@@ -430,7 +430,9 @@ struct SMTPConfigFormView: View {
                     Picker("", selection: $state.security) {
                         Text("STARTTLS (587)").tag(SMTPSecurity.starttls)
                         Text("TLS (465)").tag(SMTPSecurity.tls)
-                        Text("None").tag(SMTPSecurity.none)
+                        if state.allowsUnencryptedSecurity {
+                            Text("None").tag(SMTPSecurity.none)
+                        }
                     }
                     .labelsHidden()
                 }

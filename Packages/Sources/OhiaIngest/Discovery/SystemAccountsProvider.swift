@@ -93,7 +93,7 @@ public struct SystemAccountsProvider: Sendable {
         let imapSecurity = securityFromBool(properties["imapRequiresSSL"], defaultPort: imapPort)
         let smtpHost = normalizedString(properties["smtpHostname"] as? String)
         let smtpPort = intValue(properties["smtpPort"])
-        let smtpSecurity = smtpSecurityFromBool(properties["smtpRequiresSSL"], defaultPort: smtpPort)
+        let smtpSecurity = smtpSecurityFromBool(properties["smtpRequiresSSL"])
 
         return DiscoveredAccount(
             emailAddress: email,
@@ -156,9 +156,10 @@ public struct SystemAccountsProvider: Sendable {
         return defaultPort == 143 ? .starttls : .starttls
     }
 
-    private static func smtpSecurityFromBool(_ value: Any?, defaultPort: Int?) -> SMTPSecurity? {
+    private static func smtpSecurityFromBool(_ value: Any?) -> SMTPSecurity? {
         guard let usesSSL = boolValue(value) else { return nil }
-        if usesSSL { return .tls }
-        return defaultPort == 25 ? SMTPSecurity.none : .starttls
+        // A server without implicit TLS is reached over STARTTLS. Ohia never
+        // configures an unencrypted SMTP session from discovered settings.
+        return usesSSL ? .tls : .starttls
     }
 }

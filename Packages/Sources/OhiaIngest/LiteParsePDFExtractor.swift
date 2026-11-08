@@ -1,37 +1,50 @@
 import Foundation
+import OSLog
+import OhiaPDFParsing
 
+private let pdfParserLogger = Logger(subsystem: "org.jgkarlin.Ohia", category: "PDFParser")
+
+/// Turns a PDF into Ohia's document IR. The PDF is never opened in the
+/// calling process: `OhiaPDFParser.xpc` (no network, no shared container)
+/// parses it with the bundled LiteParse helper, or reads its text with PDFKit
+/// when LiteParse fails, and only that JSON comes back to be decoded and
+/// normalized here. The service is reached directly from the app and through
+/// the app from the worker services (`PDFParserRoute`).
 public struct LiteParsePDFExtractor: Sendable {
+    public enum Engine: Sendable, Equatable {
+        case liteParse
+        /// The service's PDFKit fallback, after LiteParse failed.
+        case pdfKit
+    }
+
     public struct Extraction: Sendable, Equatable {
         public let text: String
         public let pageCount: Int
         public let parserVersion: String
+        public let engine: Engine
         public let ir: PDFDocumentIR
         public let embeddingText: String?
         public let normalizedIRJSON: String?
         public let ragDocumentJSON: String?
     }
 
-    public struct Command: Sendable, Equatable {
-        public let executableURL: URL
-        public let baseArguments: [String]
-
-        public init(executableURL: URL, baseArguments: [String] = []) {
-            self.executableURL = executableURL
-            self.baseArguments = baseArguments
-        }
-    }
-
     public enum ExtractorError: LocalizedError, Equatable {
         case helperUnavailable
         case processFailed(status: Int32, stderr: String)
         case timedOut
+        case tooLarge
         case invalidJSON
         case emptyText
+        case cancelled
+        /// PDFKit, reading after LiteParse failed, found the PDF locked.
+        case encrypted(pageCount: Int)
+        /// PDFKit, reading after LiteParse failed, found no text.
+        case pdfKitEmptyText(pageCount: Int)
 
         public var errorDescription: String? {
             switch self {
             case .helperUnavailable:
-                return "LiteParse helper is not bundled or configured"
+                return "The PDF parser service is not available in this process"
             case .processFailed(let status, let stderr):
                 let detail = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
                 return detail.isEmpty
@@ -39,47 +52,107 @@ public struct LiteParsePDFExtractor: Sendable {
                     : "LiteParse helper exited with status \(status): \(detail)"
             case .timedOut:
                 return "LiteParse helper timed out"
+            case .tooLarge:
+                return "The PDF or its extracted text exceeds the parser's size limit"
             case .invalidJSON:
                 return "LiteParse helper did not produce valid JSON"
             case .emptyText:
                 return "LiteParse helper produced no text"
+            case .cancelled:
+                return "The PDF parse was cancelled before it finished"
+            case .encrypted:
+                return "PDF is encrypted or password-protected"
+            case .pdfKitEmptyText:
+                return "PDFKit found no extractable text"
             }
         }
     }
 
-    public var command: Command?
-    public var timeout: TimeInterval
+    /// What the service sent back for a PDF it could read.
+    public enum ServiceOutput: Sendable, Equatable {
+        /// LiteParse's JSON.
+        case liteParse(Data)
+        /// A `PDFKitTextOutput` as JSON, read after LiteParse failed.
+        case pdfKit(Data)
+    }
+
+    /// Sends PDF bytes to the service and returns its output, or throws an
+    /// `ExtractorError`.
+    public typealias Parse = @Sendable (_ pdf: Data, _ maxPages: Int) throws -> ServiceOutput
+
+    public var parse: Parse?
     public var maxPages: Int
-    public var runProcess: @Sendable (Command, URL, URL, Int, TimeInterval) throws -> ProcessResult
 
     public init(
-        command: Command? = Self.defaultCommand(),
-        timeout: TimeInterval = 45,
-        maxPages: Int = 1000,
-        runProcess: @escaping @Sendable (Command, URL, URL, Int, TimeInterval) throws -> ProcessResult = Self.runLiteParseProcess
+        parse: Parse? = Self.isolatedParse(),
+        maxPages: Int = PDFParserLimits.maxPages
     ) {
-        self.command = command
-        self.timeout = timeout
-        self.maxPages = max(1, maxPages)
-        self.runProcess = runProcess
+        self.parse = parse
+        self.maxPages = min(max(1, maxPages), PDFParserLimits.maxPages)
+    }
+
+    /// The parse function backed by `OhiaPDFParser.xpc` through this process's
+    /// `PDFParserRoute`. Nil in a process with no route (tests), where PDFs
+    /// are then not parsed at all.
+    public static func isolatedParse(bundle: Bundle = .main) -> Parse? {
+        PDFParserRoute.current(bundle: bundle).map { parse(using: $0.parse) }
+    }
+
+    /// Wraps a service route as a `Parse`: failures and fallbacks are logged,
+    /// and failures thrown as `ExtractorError`.
+    static func parse(using request: @escaping @Sendable (_ pdf: Data, _ maxPages: Int) -> PDFParserReply) -> Parse {
+        return { pdf, maxPages in
+            let reply = request(pdf, maxPages)
+            switch reply.outcome {
+            case .parsed, .cancelled:
+                break
+            case .pdfKitText:
+                pdfParserLogger.notice(
+                    "LiteParse failed status=\(reply.status, privacy: .public); the parser service read the text with PDFKit"
+                )
+            default:
+                // Record why nothing was parsed, so a broken service (signing,
+                // sandbox, crash) is visible.
+                pdfParserLogger.error(
+                    "Isolated PDF parse failed outcome=\(String(describing: reply.outcome), privacy: .public) status=\(reply.status, privacy: .public)"
+                )
+            }
+            return try output(of: reply)
+        }
+    }
+
+    static func output(of reply: PDFParserReply) throws -> ServiceOutput {
+        switch reply.outcome {
+        case .parsed:
+            guard let output = reply.output else { throw ExtractorError.invalidJSON }
+            return .liteParse(output)
+        case .pdfKitText:
+            guard let output = reply.output else { throw ExtractorError.invalidJSON }
+            return .pdfKit(output)
+        case .helperUnavailable, .launchFailed, .serviceUnavailable:
+            throw ExtractorError.helperUnavailable
+        case .invalidRequest, .outputTooLarge:
+            throw ExtractorError.tooLarge
+        case .timedOut:
+            throw ExtractorError.timedOut
+        case .processFailed:
+            throw ExtractorError.processFailed(status: reply.status, stderr: reply.stderr)
+        case .cancelled:
+            throw ExtractorError.cancelled
+        }
     }
 
     public func extract(data: Data, filename: String = "attachment.pdf") throws -> Extraction {
-        guard let command else { throw ExtractorError.helperUnavailable }
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("OhiaLiteParse-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-
-        let inputURL = directory.appendingPathComponent("input.pdf")
-        let outputURL = directory.appendingPathComponent("output.json")
-        try data.write(to: inputURL, options: [.atomic])
-
-        let result = try runProcess(command, inputURL, outputURL, maxPages, timeout)
-        guard result.status == 0 else {
-            throw ExtractorError.processFailed(status: result.status, stderr: result.stderr)
+        guard let parse else { throw ExtractorError.helperUnavailable }
+        switch try parse(data, maxPages) {
+        case .liteParse(let output):
+            return try liteParseExtraction(output, filename: filename)
+        case .pdfKit(let output):
+            return try pdfKitExtraction(output, filename: filename)
         }
-        let outputData = try Data(contentsOf: outputURL)
+    }
+
+    private func liteParseExtraction(_ outputData: Data, filename: String) throws -> Extraction {
         guard let parsed = try? JSONDecoder().decode(LiteParseJSON.self, from: outputData) else {
             throw ExtractorError.invalidJSON
         }
@@ -97,6 +170,7 @@ public struct LiteParsePDFExtractor: Sendable {
             text: text,
             pageCount: max(ir.pageCount, ir.pages.count),
             parserVersion: "liteparse",
+            engine: .liteParse,
             ir: ir,
             embeddingText: projection.embeddingText,
             normalizedIRJSON: Self.jsonString(ir),
@@ -104,103 +178,45 @@ public struct LiteParsePDFExtractor: Sendable {
         )
     }
 
-    public static func defaultCommand(
-        environment: [String: String] = ProcessInfo.processInfo.environment,
-        bundle: Bundle = .main
-    ) -> Command? {
-        if let override = environment["OHIA_LITEPARSE_HELPER"]?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !override.isEmpty {
-            return Command(executableURL: URL(fileURLWithPath: override))
+    /// One block per page, the page's whole text, as PDFKit gives no layout.
+    private func pdfKitExtraction(_ outputData: Data, filename: String) throws -> Extraction {
+        guard let output = try? JSONDecoder().decode(PDFKitTextOutput.self, from: outputData) else {
+            throw ExtractorError.invalidJSON
         }
-
-        if let direct = bundledExecutable(named: "lit", bundle: bundle) {
-            return Command(executableURL: direct)
+        let pageCount = max(output.pageCount, output.pages.count)
+        if output.isLocked { throw ExtractorError.encrypted(pageCount: pageCount) }
+        let pages = output.pages.enumerated().map { index, page -> PDFPageIR in
+            let text = page.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return PDFPageIR(
+                pageNumber: index + 1,
+                width: page.width,
+                height: page.height,
+                blocks: text.isEmpty ? [] : [
+                    PDFBlock(
+                        id: "\(filename):pdfkit:\(index + 1):0",
+                        text: text,
+                        blockType: .paragraph,
+                        bbox: BoundingBox(x: 0, y: 0, width: page.width, height: page.height),
+                        order: 0,
+                        source: .native
+                    )
+                ]
+            )
         }
-        if let direct = bundledExecutable(named: "liteparse", bundle: bundle) {
-            return Command(executableURL: direct)
-        }
-        for root in ["LiteParseHelper", "Resources/LiteParseHelper"] {
-            if let node = bundle.url(
-                forResource: "node",
-                withExtension: nil,
-                subdirectory: "\(root)/node/bin"
-            ),
-               let cli = bundledNodeCLI(root: root, bundle: bundle) {
-                return Command(executableURL: node, baseArguments: [cli.path])
-            }
-        }
-        return nil
-    }
-
-    private static func bundledExecutable(named name: String, bundle: Bundle) -> URL? {
-        let subdirectories = [
-            "LiteParseHelper",
-            "LiteParseHelper/bin",
-            "Resources/LiteParseHelper",
-            "Resources/LiteParseHelper/bin"
-        ]
-        for subdirectory in subdirectories {
-            if let url = bundle.url(forResource: name, withExtension: nil, subdirectory: subdirectory) {
-                return url
-            }
-        }
-        return nil
-    }
-
-    private static func bundledNodeCLI(root: String, bundle: Bundle) -> URL? {
-        let candidates = [
-            (name: "cli", subdirectory: "\(root)/node_modules/@llamaindex/liteparse/dist"),
-            (name: "index", subdirectory: "\(root)/node_modules/@llamaindex/liteparse/dist/src")
-        ]
-        for candidate in candidates {
-            if let url = bundle.url(
-                forResource: candidate.name,
-                withExtension: "js",
-                subdirectory: candidate.subdirectory
-            ) {
-                return url
-            }
-        }
-        return nil
-    }
-
-    public static func runLiteParseProcess(
-        command: Command,
-        inputURL: URL,
-        outputURL: URL,
-        maxPages: Int,
-        timeout: TimeInterval
-    ) throws -> ProcessResult {
-        let stderrURL = outputURL.deletingLastPathComponent().appendingPathComponent("stderr.txt")
-        FileManager.default.createFile(atPath: stderrURL.path, contents: nil)
-        let stderrHandle = try FileHandle(forWritingTo: stderrURL)
-        defer { try? stderrHandle.close() }
-
-        let process = Process()
-        process.executableURL = command.executableURL
-        process.arguments = command.baseArguments + [
-            "parse",
-            inputURL.path,
-            "--format",
-            "json",
-            "--no-ocr",
-            "--max-pages",
-            "\(maxPages)",
-            "-o",
-            outputURL.path
-        ]
-        process.standardError = stderrHandle
-
-        let group = DispatchGroup()
-        group.enter()
-        process.terminationHandler = { _ in group.leave() }
-        try process.run()
-        if group.wait(timeout: .now() + timeout) == .timedOut {
-            process.terminate()
-            throw ExtractorError.timedOut
-        }
-        let stderr = (try? String(contentsOf: stderrURL, encoding: .utf8)) ?? ""
-        return ProcessResult(status: process.terminationStatus, stderr: stderr)
+        let ir = PDFDocumentIR(fileName: filename, pageCount: pageCount, pages: pages)
+        let projection = PDFRAGNormalizer.normalize(ir)
+        let text = projection.plainText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { throw ExtractorError.pdfKitEmptyText(pageCount: pageCount) }
+        return Extraction(
+            text: text,
+            pageCount: pageCount,
+            parserVersion: "pdfkit",
+            engine: .pdfKit,
+            ir: ir,
+            embeddingText: projection.embeddingText,
+            normalizedIRJSON: Self.jsonString(ir),
+            ragDocumentJSON: Self.jsonString(projection.ragDocument)
+        )
     }
 
     private static func jsonString<T: Encodable>(_ value: T) -> String? {
@@ -208,16 +224,6 @@ public struct LiteParsePDFExtractor: Sendable {
         encoder.outputFormatting = [.sortedKeys]
         guard let data = try? encoder.encode(value) else { return nil }
         return String(data: data, encoding: .utf8)
-    }
-}
-
-public struct ProcessResult: Sendable, Equatable {
-    public let status: Int32
-    public let stderr: String
-
-    public init(status: Int32, stderr: String = "") {
-        self.status = status
-        self.stderr = stderr
     }
 }
 

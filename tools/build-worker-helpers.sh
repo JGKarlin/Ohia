@@ -38,14 +38,43 @@ swift-transformers_Hub.bundle
 
 /bin/rm -f \
     "$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/OhiaMessagesReader" \
+    "$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/OhiaPDFParser" \
     "$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/OhiaRetrievalWorker" \
     "$TARGET_BUILD_DIR/$EXECUTABLE_FOLDER_PATH/OhiaGenerativeWorker"
+
+# The LiteParse helper (Node.js with JIT, native PDFium) parses untrusted PDF
+# attachments, so it ships only inside OhiaPDFParser.xpc, whose sandbox has no
+# network and no app group. Nested code is signed before the service bundle.
+install_liteparse_helper() {
+    helper_src="$SRCROOT/Vendor/LiteParseHelper"
+    helper_dst="$1"
+    if [ ! -d "$helper_src" ]; then
+        echo "error: LiteParse helper is required for Ohia builds: $helper_src" >&2
+        exit 1
+    fi
+    /bin/mkdir -p "$(/usr/bin/dirname "$helper_dst")"
+    /bin/rm -rf "$helper_dst"
+    /bin/cp -Rp "$helper_src" "$helper_dst"
+    /bin/chmod 755 "$helper_dst/lit" "$helper_dst/node/bin/node"
+    "$SRCROOT/tools/verify-liteparse-helper.sh" "$helper_dst"
+    /usr/bin/find "$helper_dst" -type f \( -name "*.node" -o -name "*.dylib" \) \
+        -exec /usr/bin/codesign --force --sign "$sign_identity" --options runtime "$timestamp_flag" {} \;
+    /usr/bin/codesign --force --sign "$sign_identity" "$timestamp_flag" "$helper_dst/lit"
+    /usr/bin/codesign \
+        --force \
+        --sign "$sign_identity" \
+        --options runtime \
+        --entitlements "$SRCROOT/Ohia/LiteParseNode.entitlements" \
+        "$timestamp_flag" \
+        "$helper_dst/node/bin/node"
+}
 
 build_service() {
     product="$1"
     plist="$2"
     entitlements="$3"
     includes_package_resources="$4"
+    includes_liteparse_helper="${5:-0}"
     bundle="$services_root/$product.xpc"
     contents="$bundle/Contents"
     executable_dir="$contents/MacOS"
@@ -94,6 +123,22 @@ build_service() {
         "$contents/Info.plist"
     /bin/cp -f "$worker" "$executable_dir/$product"
     /bin/chmod 755 "$executable_dir/$product"
+    # The nested build records its products folder as an absolute rpath: a
+    # path on the building Mac (a temporary directory for releases) that does
+    # not exist where the app runs. Workers load nothing through @rpath, so
+    # every absolute rpath is removed before the bundle is signed.
+    if /usr/bin/otool -L "$executable_dir/$product" | /usr/bin/grep -q '@rpath/'; then
+        echo "error: $product links a library through @rpath; bundle it before shipping" >&2
+        exit 1
+    fi
+    # The nested build's signature is replaced when the bundle is signed below;
+    # removing it first keeps install_name_tool from warning that it breaks it.
+    /usr/bin/codesign --remove-signature "$executable_dir/$product"
+    /usr/bin/otool -l "$executable_dir/$product" |
+        /usr/bin/awk '/cmd LC_RPATH$/ { getline; getline; sub(/^ *path /, ""); sub(/ \(offset [0-9]+\)$/, ""); if ($0 !~ /^@/) print }' |
+        while IFS= read -r rpath; do
+            /usr/bin/install_name_tool -delete_rpath "$rpath" "$executable_dir/$product"
+        done
 
     if [ "$includes_package_resources" = "1" ]; then
         /bin/mkdir -p "$contents/Resources"
@@ -105,6 +150,10 @@ build_service() {
             fi
             /usr/bin/ditto "$resource_bundle" "$contents/Resources/$resource_name"
         done
+    fi
+
+    if [ "$includes_liteparse_helper" = "1" ]; then
+        install_liteparse_helper "$contents/Resources/LiteParseHelper"
     fi
 
     /usr/bin/codesign \
@@ -121,6 +170,12 @@ build_service \
     "$SRCROOT/Packages/XPCServices/OhiaMessagesReader-Info.plist" \
     "$SRCROOT/Ohia/OhiaMessagesReader.entitlements" \
     0
+build_service \
+    OhiaPDFParser \
+    "$SRCROOT/Packages/XPCServices/OhiaPDFParser-Info.plist" \
+    "$SRCROOT/Ohia/OhiaPDFParser.entitlements" \
+    0 \
+    1
 build_service \
     OhiaRetrievalWorker \
     "$SRCROOT/Packages/XPCServices/OhiaRetrievalWorker-Info.plist" \

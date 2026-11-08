@@ -33,8 +33,8 @@ public struct OAuthProvider: Sendable {
     }
 
     /// Whether this build ships a client ID for the provider. A build without
-    /// one (the public release, which carries no registered OAuth clients)
-    /// offers password sign-in only.
+    /// one (a build from the public source, which carries no registered OAuth
+    /// clients) offers password sign-in only for that provider.
     public var isConfigured: Bool { clientID != nil }
 
     public var clientID: String? {

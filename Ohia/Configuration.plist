@@ -5,10 +5,11 @@
     <!--
         OAuth client IDs, read at runtime by OAuthProvider.clientID.
 
-        This build ships without registered clients, so Google and Microsoft
-        accounts connect with an app password. To enable their sign-in, register
-        your own OAuth client with each provider and enter its client ID here.
-        Never place a client secret in a desktop application.
+        The source carries no registered clients; the released app adds
+        Ohia's Microsoft client ID when it is built. To enable Google or
+        Microsoft sign-in in your own build, register your own OAuth client
+        with each provider and enter its client ID here. Never place a client
+        secret in a desktop application.
     -->
     <key>OHIA_GOOGLE_OAUTH_CLIENT_ID</key>
     <string></string>

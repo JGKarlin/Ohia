@@ -77,10 +77,21 @@ public enum EmbeddingDocumentBuilder: Sendable {
         filename: String,
         extractedTextChunk: String
     ) -> String {
+        attachmentDocumentHeader(metadata: metadata, filename: filename) + extractedTextChunk
+    }
+
+    /// Everything in an attachment document before its text chunk, so callers
+    /// can measure it and size the chunk to the room left.
+    public static func attachmentDocumentHeader(metadata: MessageMetadata, filename: String) -> String {
         var parts = metadataHeader(metadata)
         parts.append("ATTACHMENT: \(filename)")
-        parts.append("ATTACHMENT_TEXT: \(extractedTextChunk)")
+        parts.append("ATTACHMENT_TEXT: ")
         return parts.joined(separator: "\n")
+    }
+
+    /// Everything in a style exemplar before the sent text.
+    public static func styleExemplarHeader(recipientInfo: String) -> String {
+        buildStyleExemplar(recipientInfo: recipientInfo, sentText: "")
     }
 
     /// Returns a date bucket string in the form "YYYY-MM, QN, weekday|weekend".

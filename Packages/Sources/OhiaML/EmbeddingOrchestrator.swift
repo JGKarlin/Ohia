@@ -28,6 +28,9 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
 
     public enum EmbeddingError: Error, Sendable, Equatable {
         case noVectorsProduced
+        /// The embedder cannot measure documents right now (its model is not
+        /// loaded), so nothing is embedded and existing vectors are kept.
+        case documentTokenizerUnavailable
     }
 
     public init(
@@ -74,6 +77,13 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
     @MainActor
     public func embedMessage(_ message: Message, context: ModelContext) async throws {
         guard !message.isTrashed else { return }
+        // Checked before extraction, which deletes the message's existing
+        // vectors, so a model that is not loaded leaves them in place. A model
+        // unloaded after this point still fails the message (`.failed`), and
+        // the next pass re-embeds it.
+        guard let tokenizer = embedder.documentTokenizer else {
+            throw EmbeddingError.documentTokenizerUnavailable
+        }
         let messageId = message.id.uuidString
         var completedSuccessfully = false
         defer {
@@ -87,29 +97,33 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
         // Phase 1: extract all Sendable inputs on MainActor.
         let seed = try extractInputSeed(messageId: messageId, message: message)
 
-        // Phase 2: detached — build documents, embed, and persist vectors.
+        // Phase 2: detached — read files, measure and build documents, embed,
+        // and persist vectors. Measuring tokenizes every document, so none of
+        // it runs on the MainActor.
         let embedder = self.embedder
         let vectorStore = self.vectorStore
         let meaningFeatureStore = self.meaningFeatureStore
-        let input = Self.materializeInput(seed)
-        let chunkCount = input.bodyChunks.count
-            + input.attachmentChunks.reduce(0) { total, attachment in
-                total + attachment.cardChunks.reduce(0) { $0 + $1.embeddingChunks.count }
-            }
-            + 1
-        let sig = embedSignposter.beginInterval(
-            "message", id: embedSignposter.makeSignpostID(),
-            "chunks=\(chunkCount)"
-        )
-        let vectorsInserted = try await Task.detached(priority: .utility) { [embedder, vectorStore, meaningFeatureStore] in
-            try EmbeddingOrchestrator.performEmbedding(
+        let (input, vectorsInserted) = try await Task.detached(priority: .utility) {
+            [embedder, vectorStore, meaningFeatureStore] in
+            let input = EmbeddingOrchestrator.materializeInput(seed, tokenizer: tokenizer)
+            let chunkCount = input.bodyChunks.count
+                + input.attachmentChunks.reduce(0) { total, attachment in
+                    total + attachment.cardChunks.reduce(0) { $0 + $1.embeddingDocuments.count }
+                }
+                + 1
+            let sig = embedSignposter.beginInterval(
+                "message", id: embedSignposter.makeSignpostID(),
+                "chunks=\(chunkCount)"
+            )
+            let inserted = try EmbeddingOrchestrator.performEmbedding(
                 input: input,
                 embedder: embedder,
                 vectorStore: vectorStore,
                 meaningFeatureStore: meaningFeatureStore
             )
+            embedSignposter.endInterval("message", sig, "status=ok")
+            return (input, inserted)
         }.value
-        embedSignposter.endInterval("message", sig, "status=ok")
         guard vectorsInserted > 0 else {
             throw EmbeddingError.noVectorsProduced
         }
@@ -166,7 +180,7 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
         embeddingLaneLimit: Int = 1,
         shouldYield: @escaping @MainActor @Sendable () -> Bool = { false }
     ) async throws -> Int {
-        guard !embeddingProviderUnavailable else {
+        guard !embeddingProviderUnavailable, let tokenizer = embedder.documentTokenizer else {
             return 0
         }
 
@@ -210,10 +224,23 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
                 "batch", id: signposter.makeSignpostID(),
                 "messages=\(inputs.count)"
             )
-            let materialized = inputs.map { item in
-                (messageId: item.messageId, input: EmbeddingOrchestrator.materializeInput(item.input))
+            // Measuring documents is real work, so the foreground throttle is
+            // honored between messages here too; messages not reached stay
+            // pending for the next pass.
+            var materialized: [(messageId: UUID, input: EmbeddingInput)] = []
+            materialized.reserveCapacity(inputs.count)
+            var notReached: Set<UUID> = []
+            for (offset, item) in inputs.enumerated() {
+                if await shouldYield() {
+                    notReached = Set(inputs[offset...].map(\.messageId))
+                    break
+                }
+                materialized.append((
+                    messageId: item.messageId,
+                    input: EmbeddingOrchestrator.materializeInput(item.input, tokenizer: tokenizer)
+                ))
             }
-            let succeeded = await EmbeddingOrchestrator.performEmbeddingBatch(
+            let embedded = await EmbeddingOrchestrator.performEmbeddingBatch(
                 inputs: materialized,
                 embedder: embedder,
                 vectorStore: vectorStore,
@@ -225,12 +252,16 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
                 embeddingLaneLimit: embeddingLaneLimit,
                 shouldYield: shouldYield
             )
+            let outcome = EmbeddingBatchOutcome(
+                succeededIds: embedded.succeededIds,
+                deferredIds: embedded.deferredIds.union(notReached)
+            )
             signposter.endInterval(
                 "batch",
                 sig,
-                "succeeded=\(succeeded.succeededIds.count) deferred=\(succeeded.deferredIds.count)"
+                "succeeded=\(outcome.succeededIds.count) deferred=\(outcome.deferredIds.count)"
             )
-            return succeeded
+            return outcome
         }.value
 
         // Phase 3: mark statuses on MainActor in a single pass and save
@@ -289,6 +320,9 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
         let messageReceivedAt: TimeInterval?
     }
 
+    /// Every document here already fits the embedding model's window
+    /// (`EmbeddingDocumentLayout`); payloads are what is stored beside each
+    /// vector.
     private struct EmbeddingInput: Sendable {
         let messageId: String
         let subject: String
@@ -296,15 +330,14 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
         let accountId: String?
         let hasAttachment: Bool
         let metadata: MessageMetadata
-        let bodyPreview: String
+        let summaryDocument: String
+        let summaryPayload: String
         let bodyChunks: [TextChunk]
-        let isSentByUser: Bool
-        let recipientInfo: String
         let bodyText: String
-        let styleBodyText: String
+        let styleDocument: String?
+        let stylePayload: String?
         let embeddingVersion: String
         let attachmentChunks: [AttachmentChunks]
-        let messageEvidenceBundle: MessageEvidenceBundle?
         let messageReceivedAt: TimeInterval?
     }
 
@@ -324,8 +357,11 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
 
     private struct AttachmentCardChunks: Sendable {
         let card: AttachmentEvidenceCard
-        let plainChunks: [String]
-        let embeddingChunks: [String]
+        /// Attachment header plus one text window each, ready to embed.
+        let embeddingDocuments: [String]
+        /// Aligned with `embeddingDocuments`: the full-header payload stored
+        /// beside each vector.
+        let payloadDocuments: [String]
         let chunkMetadata: [AttachmentRAGMetadata?]
     }
 
@@ -382,7 +418,12 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
 
     // MARK: - Phase 2 — detached embedding + storage
 
-    private static func materializeInput(_ seed: EmbeddingInputSeed) -> EmbeddingInput {
+    private static func materializeInput(
+        _ seed: EmbeddingInputSeed,
+        tokenizer: any EmbeddingDocumentTokenizing
+    ) -> EmbeddingInput {
+        let layout = EmbeddingDocumentLayout(tokenizer: tokenizer)
+        let embeddedMetadata = layout.fittedMetadata(seed.metadata)
         let bodyText: String
         if let bodyTextPath = seed.bodyTextPath {
             bodyText = (try? String(contentsOfFile: bodyTextPath, encoding: .utf8)) ?? ""
@@ -411,6 +452,15 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
                 ? embeddingSourceText!
                 : extractedText
             let structuredDocument = attachment.ragDocumentPath.flatMap(Self.loadRAGDocument)
+            let embeddedHeader = EmbeddingDocumentBuilder.attachmentDocumentHeader(
+                metadata: embeddedMetadata,
+                filename: layout.fittedFilename(attachment.filename)
+            )
+            let payloadHeader = EmbeddingDocumentBuilder.attachmentDocumentHeader(
+                metadata: seed.metadata,
+                filename: attachment.filename
+            )
+            let chunkCapacity = layout.chunkCapacity(afterHeader: embeddedHeader)
             let cards = attachment.evidencePacket?.evidenceCards(fallbackExtractedText: extractedText) ?? [
                 AttachmentEvidenceCard(
                     id: [attachment.attachmentId, attachment.filename, AttachmentEvidenceModality.extractedText.rawValue]
@@ -441,14 +491,17 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
                     confidence: nil,
                     text: structuredDocument.plainText.isEmpty ? extractedText : structuredDocument.plainText
                 )
+                let windows = structuredDocument.chunks.flatMap {
+                    layout.structuredWindows(for: $0, chunkCapacity: chunkCapacity)
+                }
                 cardChunks = [
                     AttachmentCardChunks(
                         card: card,
-                        plainChunks: structuredDocument.chunks.map(\.plainText),
-                        embeddingChunks: structuredDocument.chunks.map(\.embeddingText),
-                        chunkMetadata: structuredDocument.chunks.map(\.metadata)
+                        embeddingDocuments: windows.map { layout.verified(embeddedHeader + $0.embeddingText) },
+                        payloadDocuments: windows.map { payloadHeader + $0.plainText },
+                        chunkMetadata: windows.map(\.metadata)
                     )
-                ]
+                ].filter { !$0.embeddingDocuments.isEmpty }
             } else {
                 cardChunks = cards
                     .filter(\.isUseful)
@@ -456,15 +509,21 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
                         let embeddingPayload = card.modality == .extractedText
                             ? extractedTextSemanticPayload(card: card, text: fallbackEmbeddingText)
                             : card.semanticText
-                        let embeddingChunks = TextChunker.chunk(embeddingPayload).map(\.text)
+                        let embeddingChunks = layout.chunkTexts(embeddingPayload, capacity: chunkCapacity)
+                        let plainChunks = layout.chunkTexts(card.semanticText, capacity: chunkCapacity)
+                        let payloadChunks = embeddingChunks.indices.map { index in
+                            plainChunks.indices.contains(index)
+                                ? plainChunks[index]
+                                : (plainChunks.last ?? card.semanticText)
+                        }
                         return AttachmentCardChunks(
                             card: card,
-                            plainChunks: TextChunker.chunk(card.semanticText).map(\.text),
-                            embeddingChunks: embeddingChunks,
+                            embeddingDocuments: embeddingChunks.map { layout.verified(embeddedHeader + $0) },
+                            payloadDocuments: payloadChunks.map { payloadHeader + $0 },
                             chunkMetadata: Array(repeating: nil, count: embeddingChunks.count)
                         )
                     }
-                    .filter { !$0.embeddingChunks.isEmpty }
+                    .filter { !$0.embeddingDocuments.isEmpty }
             }
             attachmentChunks.append(AttachmentChunks(
                 attachmentId: attachment.attachmentId,
@@ -492,6 +551,16 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
             }
         )
 
+        let summary = layout.summaryDocuments(
+            embeddedMetadata: embeddedMetadata,
+            payloadMetadata: seed.metadata,
+            body: searchableBodyText,
+            digest: evidenceBundle.hasUsefulEvidence ? evidenceBundle.digest(maxCharacters: 1_800) : nil
+        )
+        let style = seed.isSentByUser && !styleBodyText.isEmpty
+            ? layout.styleDocuments(recipientInfo: seed.recipientInfo, sentText: styleBodyText)
+            : nil
+
         return EmbeddingInput(
             messageId: seed.messageId,
             subject: seed.subject,
@@ -499,15 +568,14 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
             accountId: seed.accountId,
             hasAttachment: seed.hasAttachment,
             metadata: seed.metadata,
-            bodyPreview: firstWords(searchableBodyText, count: 100),
-            bodyChunks: TextChunker.chunk(searchableBodyText),
-            isSentByUser: seed.isSentByUser,
-            recipientInfo: seed.recipientInfo,
+            summaryDocument: summary.document,
+            summaryPayload: summary.payload,
+            bodyChunks: layout.bodyChunks(searchableBodyText),
             bodyText: searchableBodyText,
-            styleBodyText: styleBodyText,
+            styleDocument: style?.document,
+            stylePayload: style?.payload,
             embeddingVersion: seed.embeddingVersion,
             attachmentChunks: attachmentChunks,
-            messageEvidenceBundle: evidenceBundle.hasUsefulEvidence ? evidenceBundle : nil,
             messageReceivedAt: seed.messageReceivedAt
         )
     }
@@ -604,12 +672,12 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
         }
 
         // Summary
-        let summaryDocument = EmbeddingDocumentBuilder.buildSummaryDocument(
-            metadata: input.metadata,
-            bodyPreview: input.bodyPreview,
-            messageEvidenceDigest: input.messageEvidenceBundle?.digest(maxCharacters: 1_800)
+        append(
+            collection: .context,
+            chunkIndex: chunkIndex,
+            document: input.summaryDocument,
+            textPayload: input.summaryPayload
         )
-        append(collection: .context, chunkIndex: chunkIndex, document: summaryDocument)
         chunkIndex += 1
 
         // Body chunks
@@ -627,45 +695,34 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
         }
 
         // Style exemplar
-        if input.isSentByUser, !input.styleBodyText.isEmpty {
-            let styleDocument = EmbeddingDocumentBuilder.buildStyleExemplar(
-                recipientInfo: input.recipientInfo, sentText: input.styleBodyText
+        if let styleDocument = input.styleDocument {
+            append(
+                collection: .style,
+                chunkIndex: 0,
+                document: styleDocument,
+                textPayload: input.stylePayload
             )
-            append(collection: .style, chunkIndex: 0, document: styleDocument)
         }
 
         // Attachments
         for attachment in input.attachmentChunks {
             var vectorChunkIndex = 0
             for (cardIndex, cardChunks) in attachment.cardChunks.enumerated() {
-                for (chunkIndex, embeddingChunkText) in cardChunks.embeddingChunks.enumerated() {
-                    let plainChunkText = cardChunks.plainChunks.indices.contains(chunkIndex)
-                        ? cardChunks.plainChunks[chunkIndex]
-                        : (cardChunks.plainChunks.last ?? cardChunks.card.semanticText)
+                for (chunkIndex, embeddingDocument) in cardChunks.embeddingDocuments.enumerated() {
                     let ragMetadata = cardChunks.chunkMetadata.indices.contains(chunkIndex)
                         ? cardChunks.chunkMetadata[chunkIndex]
                         : nil
-                    let embeddingDocument = EmbeddingDocumentBuilder.buildAttachmentDocument(
-                        metadata: input.metadata,
-                        filename: attachment.filename,
-                        extractedTextChunk: embeddingChunkText
-                    )
-                    let textPayload = EmbeddingDocumentBuilder.buildAttachmentDocument(
-                        metadata: input.metadata,
-                        filename: attachment.filename,
-                        extractedTextChunk: plainChunkText
-                    )
                     append(
                         collection: .attachment,
                         chunkIndex: vectorChunkIndex,
                         document: embeddingDocument,
-                        textPayload: textPayload,
+                        textPayload: cardChunks.payloadDocuments[chunkIndex],
                         metadataJSON: attachmentChunkMetadataJSON(
                             attachment,
                             card: cardChunks.card,
                             cardIndex: cardIndex,
                             chunkIndex: chunkIndex,
-                            chunkCount: cardChunks.embeddingChunks.count,
+                            chunkCount: cardChunks.embeddingDocuments.count,
                             ragMetadata: ragMetadata
                         )
                     )
@@ -965,12 +1022,5 @@ public final class EmbeddingOrchestrator: @unchecked Sendable {
             }
         }
         return "correspondent=unknown"
-    }
-
-    private static func firstWords(_ text: String, count: Int) -> String {
-        let words = text.components(separatedBy: .whitespacesAndNewlines)
-            .filter { !$0.isEmpty }
-        let selected = words.prefix(count)
-        return selected.joined(separator: " ")
     }
 }

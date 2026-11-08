@@ -12,6 +12,11 @@ public final class BGE3ModelDownloader: @unchecked Sendable {
 
     public static let coreMLRepoID = "JGKarlin/ohia-bge-m3-coreml"
     public static let tokenizerRepoID = "BAAI/bge-m3"
+    /// Downloads are pinned to these commits so a change to a repository's
+    /// `main` branch never reaches an installed app unreviewed. Hugging Face
+    /// serves a commit's files immutably.
+    public static let coreMLRevision = "cb67d6bcbdb0c68efc2448752717cbbf925034c6"
+    public static let tokenizerRevision = "5617a9f61b028005a4858fdac845db406aefb181"
     public static let modelPackageFilename = "bge-m3.mlpackage"
     public static let compiledModelFilename = "bge-m3.mlmodelc"
 
@@ -132,15 +137,16 @@ public final class BGE3ModelDownloader: @unchecked Sendable {
         return bundleLocalDirectory
     }
 
-    /// Download or refresh all required artifacts. `Hub.snapshot` owns the
+    /// Download or refresh all required artifacts. `HubApi.snapshot` owns the
     /// content-addressed global cache; Ohia keeps stable local paths under its
     /// Application Support directory for Core ML and tokenizer loading.
     public func download(progress: (@Sendable (Double) -> Void)? = nil) async throws {
         try FileManager.default.createDirectory(at: cacheDirectory, withIntermediateDirectories: true)
 
         let coreMLRepo = Hub.Repo(id: Self.coreMLRepoID)
-        let coreMLDir = try await Hub.snapshot(
+        let coreMLDir = try await HubApi.shared.snapshot(
             from: coreMLRepo,
+            revision: Self.coreMLRevision,
             matching: ["\(Self.modelPackageFilename)/*"]
         ) { p in
             progress?(Self.clamp(p.fractionCompleted * 0.85))
@@ -152,8 +158,9 @@ public final class BGE3ModelDownloader: @unchecked Sendable {
         )
 
         let tokenizerRepo = Hub.Repo(id: Self.tokenizerRepoID)
-        let tokenizerDir = try await Hub.snapshot(
+        let tokenizerDir = try await HubApi.shared.snapshot(
             from: tokenizerRepo,
+            revision: Self.tokenizerRevision,
             matching: Self.tokenizerFilenames
         ) { p in
             progress?(Self.clamp(0.85 + p.fractionCompleted * 0.15))

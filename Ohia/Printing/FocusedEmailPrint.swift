@@ -131,6 +131,17 @@ nonisolated struct FocusedEmailPrintDocument: Sendable, Equatable {
 }
 
 enum FocusedEmailPrintHTMLRenderer {
+    /// Remote content stays blocked inside WebKit unless every HTML body in
+    /// the print job comes from a sender the user trusts.
+    static func blocksRemoteContent(_ document: FocusedEmailPrintDocument) -> Bool {
+        document.messages.contains { message in
+            if case .html(_, let loadsRemoteImages) = message.body {
+                return !loadsRemoteImages
+            }
+            return false
+        }
+    }
+
     static func render(_ document: FocusedEmailPrintDocument) -> String {
         var renderedMessages: [String] = []
         for message in document.messages {
@@ -557,7 +568,10 @@ enum FocusedEmailPrintCoordinator {
             )
             let html = FocusedEmailPrintHTMLRenderer.render(document)
             let host = FocusedEmailPrintWebViewHost()
-            try await host.load(html: html)
+            try await host.load(
+                html: html,
+                blocksRemoteContent: FocusedEmailPrintHTMLRenderer.blocksRemoteContent(document)
+            )
             host.runPrintOperation(jobTitle: "Ohia — \(document.title)")
         } catch {
             presentError(error)
@@ -578,9 +592,23 @@ enum FocusedEmailPrintCoordinator {
     }
 }
 
+enum FocusedEmailPrintError: LocalizedError {
+    /// WebKit could not provide the rule list that keeps remote content off
+    /// the network, so the email was not rendered.
+    case unsafeContent
+
+    var errorDescription: String? {
+        switch self {
+        case .unsafeContent:
+            "The email couldn’t be prepared for printing without loading remote content. Try again."
+        }
+    }
+}
+
 @MainActor
 private final class FocusedEmailPrintWebViewHost: NSObject, WKNavigationDelegate {
     private let webView: WKWebView
+    private let loader = EmailWebViewLoader()
     private var continuation: CheckedContinuation<Void, Error>?
 
     override init() {
@@ -595,10 +623,32 @@ private final class FocusedEmailPrintWebViewHost: NSObject, WKNavigationDelegate
         webView.navigationDelegate = self
     }
 
-    func load(html: String) async throws {
+    func load(html: String, blocksRemoteContent: Bool) async throws {
         try await withCheckedThrowingContinuation { continuation in
             self.continuation = continuation
-            webView.loadHTMLString(html, baseURL: nil)
+            loader.load(
+                html,
+                blocksRemoteContent: blocksRemoteContent,
+                baseURL: nil,
+                into: webView
+            ) { [weak self] rendered in
+                guard !rendered else { return }
+                self?.finishLoading(with: .failure(FocusedEmailPrintError.unsafeContent))
+            }
+        }
+    }
+
+    func webView(
+        _ webView: WKWebView,
+        decidePolicyFor navigationAction: WKNavigationAction,
+        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
+    ) {
+        // A print job never follows links or lets the page navigate itself.
+        switch EmailWebContentPolicy.navigationDecision(for: navigationAction) {
+        case .allow:
+            decisionHandler(.allow)
+        case .cancel, .openExternally:
+            decisionHandler(.cancel)
         }
     }
 

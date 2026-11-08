@@ -30,8 +30,22 @@ public struct MailAppSMTPReader: Sendable {
     }
 
     public func read(forAccountName name: String) async throws -> Info {
-        let escaped = name.replacingOccurrences(of: "\"", with: "\\\"")
-        let script = """
+        let script = Self.script(forAccountName: name)
+        guard let output = executor(script), !output.isEmpty else {
+            throw ParseError.scriptReturnedNil
+        }
+        return try Self.parseScriptOutput(output)
+    }
+
+    /// The AppleScript that reads one Mail account's SMTP server. The account
+    /// name is embedded as an AppleScript string literal, so backslashes are
+    /// escaped before quotes; a name ending in a backslash cannot close the
+    /// literal early. Internal so unit tests can exercise it.
+    static func script(forAccountName name: String) -> String {
+        let escaped = name
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return """
         tell application "Mail"
             try
                 set srv to smtp server of account "\(escaped)"
@@ -41,10 +55,6 @@ public struct MailAppSMTPReader: Sendable {
             end try
         end tell
         """
-        guard let output = executor(script), !output.isEmpty else {
-            throw ParseError.scriptReturnedNil
-        }
-        return try Self.parseScriptOutput(output)
     }
 
     /// Parses the AppleScript output string — comma-separated four-tuple of

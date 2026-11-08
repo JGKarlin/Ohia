@@ -49,6 +49,32 @@ public actor SMTPClient {
         }
     }
 
+    /// Refuses an unencrypted SMTP session to any server that is not on this
+    /// Mac. Without TLS the AUTH exchange (password or OAuth bearer token) and
+    /// the message itself cross the network in cleartext; a loopback relay
+    /// (a local bridge or test listener) never leaves the machine.
+    public static func requireEncryptedTransport(host: String, security: SMTPSecurity) throws {
+        guard security == SMTPSecurity.none, !isLoopbackHost(host) else { return }
+        throw SMTPError.permanent(
+            "Unencrypted SMTP is allowed only to a server on this Mac. Choose STARTTLS or TLS for \(host)."
+        )
+    }
+
+    public static func isLoopbackHost(_ host: String) -> Bool {
+        var name = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if name.hasPrefix("["), name.hasSuffix("]") {
+            name = String(name.dropFirst().dropLast())
+        }
+        if name.hasSuffix(".") { name.removeLast() }
+        if name == "localhost" || name == "::1" { return true }
+        let octets = name.split(separator: ".", omittingEmptySubsequences: false)
+        guard octets.count == 4, octets[0] == "127" else { return false }
+        return octets.allSatisfy { octet in
+            !octet.isEmpty && octet.count <= 3 && octet.allSatisfy(\.isASCII)
+                && octet.allSatisfy(\.isNumber) && (Int(octet) ?? 256) <= 255
+        }
+    }
+
     public func sendOne(
         host: String, port: Int, security: SMTPSecurity,
         auth: Auth,
@@ -56,6 +82,7 @@ public actor SMTPClient {
         payload: Data,
         onAccepted: @Sendable () async -> Void = {}
     ) async throws {
+        try Self.requireEncryptedTransport(host: host, security: security)
         try await transport.connect(host: host, port: port, tls: security == .tls)
         // Close idempotently on any exit path — the happy-path QUIT+close below
         // still runs; on throw, this ensures NWConnection file descriptors are

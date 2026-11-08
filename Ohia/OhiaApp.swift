@@ -1372,14 +1372,16 @@ struct OhiaApp: App {
         let storageLayout = OhiaStorageRoot.required()
         let appPrivateRoot = OhiaStorageRoot.requiredAppPrivateRoot()
         do {
+            var keychainLeftovers: [DeveloperCredentialResetter.Leftover] = []
             _ = try SandboxResetCoordinator.completePendingReset(
                 sharedLayout: storageLayout,
                 appPrivateRoots: [appPrivateRoot],
                 prepareExternalStateForDeletion: {
-                    try DeveloperCredentialResetter.resetAll()
+                    keychainLeftovers = DeveloperCredentialResetter.resetAll()
                     DeveloperDefaultsResetter.resetAll()
                 }
             )
+            ResetCredentialCleanupNotice.schedule(leftovers: keychainLeftovers)
         } catch {
             fatalError("Failed to complete the pending Ohia reset: \(String(reflecting: type(of: error)))")
         }

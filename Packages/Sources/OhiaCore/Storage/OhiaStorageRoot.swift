@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 
 public struct OhiaStorageLayout: Equatable, Sendable {
     public let containerRoot: URL
@@ -25,7 +26,21 @@ public struct OhiaStorageLayout: Equatable, Sendable {
 public enum OhiaStorageRoot {
     public static let appGroupIdentifier = "group.org.jgkarlin.Ohia"
 
+    private static let testContainer = Mutex<URL?>(nil)
+
+    /// Points every store at `containerURL`, instead of the App Group
+    /// container, for the rest of this process. Only test targets call this,
+    /// so a test run never reads, writes or deletes files in the user's live
+    /// Ohia storage. No production source calls it (enforced by
+    /// `StorageRootSourceInventoryTests`).
+    public static func overrideContainerForTesting(_ containerURL: URL) {
+        testContainer.withLock { $0 = containerURL.standardizedFileURL }
+    }
+
     public static func resolve(fileManager: FileManager = .default) throws -> OhiaStorageLayout {
+        if let containerURL = testContainer.withLock({ $0 }) {
+            return layout(containerURL: containerURL)
+        }
         guard let containerURL = fileManager.containerURL(
             forSecurityApplicationGroupIdentifier: appGroupIdentifier
         ) else {

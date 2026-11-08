@@ -11,7 +11,6 @@
 import SwiftUI
 import SwiftData
 import AppKit
-import PDFKit
 import UniformTypeIdentifiers
 import OhiaCore
 import OhiaIngest
@@ -3321,8 +3320,21 @@ enum ComposerSourceText {
         return String(decoding: data, as: UTF8.self)
     }
 
+    /// PDF text comes from the sandboxed LiteParse service, the same path as
+    /// mail attachments, with PDFKit as its fallback. Files without a PDF
+    /// header (the PDF format allows it anywhere in the first 1024 bytes)
+    /// are not PDFs and never reach the parser.
     nonisolated private static func pdfText(at url: URL) -> String? {
-        PDFDocument(url: url)?.string
+        guard let data = try? Data(contentsOf: url, options: .mappedIfSafe),
+              data.prefix(1024).range(of: Data("%PDF-".utf8)) != nil else {
+            return nil
+        }
+        return AttachmentExtractor.extract(
+            data: data,
+            mimeType: "application/pdf",
+            filename: url.lastPathComponent,
+            policy: .full
+        )?.text
     }
 
     private static func attributedText(at url: URL) -> String? {

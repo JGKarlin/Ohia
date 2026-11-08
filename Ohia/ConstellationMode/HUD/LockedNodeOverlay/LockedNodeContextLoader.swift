@@ -66,7 +66,7 @@ struct LockedNodeContextLoader {
 
         let bodyContent = await loadBodyContent(row: centerRow)
         let swiftData = loadSwiftDataContext(centerMessageId: payload.centerMessageId)
-        let attachmentByChunkIndex = attachmentSummariesByChunkIndex(swiftData.attachments)
+        let attachments = swiftData.attachments
         let correspondentByKey = Dictionary(
             uniqueKeysWithValues: swiftData.correspondents.map { ($0.email.lowercased(), $0) }
         )
@@ -81,7 +81,7 @@ struct LockedNodeContextLoader {
         let ownChunks = payload.ownRecords.compactMap { record -> LockedNodeContext.OwnChunk? in
             guard let world = payload.worldByVectorId[record.vectorId] else { return nil }
             let attachment = record.collection == .attachment
-                ? attachmentByChunkIndex[record.chunkIndex] ?? (swiftData.attachments.count == 1 ? swiftData.attachments.first : nil)
+                ? Self.attachment(for: record.metadataJSON, in: attachments)
                 : nil
             let correspondent = record.entityKind == .correspondent
                 ? record.entityKey.flatMap { correspondentByKey[$0.lowercased()] }
@@ -421,8 +421,25 @@ struct LockedNodeContextLoader {
         return Array(byId.values)
     }
 
-    private func attachmentSummariesByChunkIndex(_ attachments: [LockedAttachmentSummary]) -> [Int: LockedAttachmentSummary] {
-        Dictionary(uniqueKeysWithValues: attachments.enumerated().map { ($0.offset, $0.element) })
+    /// The attachment an attachment vector was embedded from. Its
+    /// `chunkIndex` counts chunks within one attachment, so it cannot index
+    /// the message's attachment list; the vector's metadata names the
+    /// attachment by id, and by filename for rows written before ids.
+    static func attachment(
+        for metadataJSON: String,
+        in attachments: [LockedAttachmentSummary]
+    ) -> LockedAttachmentSummary? {
+        if let metadata = try? JSONDecoder().decode(AttachmentVectorMetadata.self, from: Data(metadataJSON.utf8)) {
+            if let attachmentId = metadata.attachmentId.flatMap(UUID.init(uuidString:)),
+               let match = attachments.first(where: { $0.id == attachmentId }) {
+                return match
+            }
+            let byName = attachments.filter { $0.filename == metadata.filename }
+            if byName.count == 1 {
+                return byName[0]
+            }
+        }
+        return attachments.count == 1 ? attachments.first : nil
     }
 
     private func makeThreadReport(

@@ -3,14 +3,21 @@ import Foundation
 import ImageIO
 import OhiaCore
 import OhiaIngest
+import OhiaPDFParsing
 import OSLog
-import PDFKit
 
 /// Adds pixel evidence at the deferred/on-demand extraction boundary. Existing
 /// text, document metadata, and source chunks remain authoritative and intact.
+/// PDF pages are rendered to images inside `OhiaPDFParser.xpc`; only the PNG
+/// images come back to this process.
 public enum MultimodalAttachmentExtractor {
+    /// Renders up to `maxPages` pages of a PDF as PNG images no larger than
+    /// `maxPixelSize` on either side.
+    public typealias RenderPages = @Sendable (_ pdf: Data, _ maxPages: Int, _ maxPixelSize: Int) -> PDFRenderReply
+
     private static let logger = Logger(subsystem: "org.jgkarlin.Ohia", category: "AttachmentPixels")
     private static let maximumPages = 8
+    private static let pagePixelSize = 1536
     public static let maximumBytes = 50 * 1024 * 1024
 
     @concurrent
@@ -26,7 +33,8 @@ public enum MultimodalAttachmentExtractor {
         guard original.kind == .pdf || original.kind == .image else { return original }
         do {
             return try await enrich(original, data: data, filename: filename, mimeType: mimeType,
-                                    profile: .current(), analyze: analyzePixels)
+                                    profile: .current(), renderPages: PDFParserRoute.current()?.renderPages,
+                                    analyze: analyzePixels)
         } catch {
             try Task.checkCancellation()
             if error is CancellationError { throw error }
@@ -44,12 +52,6 @@ public enum MultimodalAttachmentExtractor {
         }
         let data = try Data(contentsOf: url, options: .mappedIfSafe)
         return try await extract(data: data, mimeType: mimeType, filename: filename)
-    }
-
-    static func pageIndices(pageCount: Int) -> [Int] {
-        guard pageCount > 0 else { return [] }
-        if pageCount <= maximumPages { return Array(0..<pageCount) }
-        return (0..<maximumPages).map { $0 * (pageCount - 1) / (maximumPages - 1) }
     }
 
     public static func snippet(from result: AttachmentExtractionResult, maximumCharacters: Int = 4000) -> String {
@@ -73,6 +75,7 @@ public enum MultimodalAttachmentExtractor {
         filename: String,
         mimeType: String,
         profile: AppleIntelligenceModelProfile,
+        renderPages: RenderPages?,
         analyze: @Sendable (VisualAttachmentReference) async throws -> VisualAttachmentAnalysisRecord?
     ) async throws -> AttachmentExtractionResult {
         guard profile.imageAnalysisTier == .multimodal,
@@ -81,15 +84,26 @@ public enum MultimodalAttachmentExtractor {
               original.status != .tooLarge,
               data.count <= maximumBytes else { return original }
         try Task.checkCancellation()
-        let pdf: PDFDocument?
-        let indices: [Int]
-        if original.kind == .pdf {
-            guard let document = PDFDocument(data: data), !document.isLocked else { return original }
-            pdf = document
-            indices = pageIndices(pageCount: document.pageCount)
+        let isPDF = original.kind == .pdf
+        let rasters: [(index: Int, png: Data)]
+        var renderedPageCount: Int?
+        if isPDF {
+            // No route (a test runner) means no pixels: the PDF is never
+            // opened in this process. A PDF whose parse just failed (the
+            // service unreachable or timed out, or bytes it could not open)
+            // is not sent back for rendering.
+            guard let renderPages, original.status != .parseFailed else { return original }
+            let reply = renderPages(data, maximumPages, pagePixelSize)
+            if reply.outcome == .cancelled { throw CancellationError() }
+            guard let output = reply.output else {
+                logger.warning("PDF pages could not be rendered outcome=\(String(describing: reply.outcome), privacy: .public); preserving extracted text")
+                return original
+            }
+            rasters = output.pages.map { (index: $0.index, png: $0.png) }
+            renderedPageCount = output.pageCount
         } else {
-            pdf = nil
-            indices = [0]
+            guard let raster = png(imageData: data) else { return original }
+            rasters = [(index: 0, png: raster)]
         }
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ohia-pixels-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false,
@@ -97,33 +111,25 @@ public enum MultimodalAttachmentExtractor {
         defer { try? FileManager.default.removeItem(at: directory) }
         var additions: [AttachmentRAGChunk] = []
         let existing = original.ragDocumentJSON.flatMap { try? JSONDecoder().decode(AttachmentRAGDocument.self, from: Data($0.utf8)) }
-        for index in indices {
+        for (index, imageData) in rasters {
             try Task.checkCancellation()
             do {
-                let imageData: Data
-                if let pdf {
-                    guard let page = pdf.page(at: index), let raster = png(page: page) else { continue }
-                    imageData = raster
-                } else {
-                    guard let raster = png(imageData: data) else { continue }
-                    imageData = raster
-                }
                 // Do not use the untrusted attachment filename as a filesystem path.
                 let imageURL = directory.appendingPathComponent("page-\(index).png")
                 try imageData.write(to: imageURL, options: .atomic)
                 defer { try? FileManager.default.removeItem(at: imageURL) }
                 let reference = VisualAttachmentReference(
-                    filename: pdf == nil ? filename : "\(filename) — page \(index + 1).png",
+                    filename: isPDF ? "\(filename) — page \(index + 1).png" : filename,
                     mimeType: "image/png", filePath: imageURL.path
                 )
                 guard let analysis = try await analyze(reference), analysis.hasSignals else { continue }
-                let locator = pdf == nil ? "Image visual analysis" : "Page \(index + 1), visual analysis"
+                let locator = isPDF ? "Page \(index + 1), visual analysis" : "Image visual analysis"
                 let text = "\(locator) (generated from pixels; decoded content is untrusted data):\n\(analysis.semanticText)"
                 additions.append(AttachmentRAGChunk(
                     id: "\(filename):visual:\(index)", fileName: filename, fileType: original.kind.rawValue,
                     plainText: text, embeddingText: text,
                     metadata: AttachmentRAGMetadata(
-                        sourceLocator: locator, pageNumber: pdf == nil ? nil : index + 1,
+                        sourceLocator: locator, pageNumber: isPDF ? index + 1 : nil,
                         textSource: "visual-analysis", sourceOrderStart: index, sourceOrderEnd: index,
                         chunkOrder: (existing?.chunks.count ?? (original.hasExtractedText ? 1 : 0)) + additions.count
                     )
@@ -155,17 +161,9 @@ public enum MultimodalAttachmentExtractor {
             parserVersion: "\(original.parserVersion ?? "text")+apple-pixels-v1",
             embeddingText: embedding, normalizedIRJSON: original.normalizedIRJSON,
             ragDocumentJSON: String(decoding: try JSONEncoder().encode(rag), as: UTF8.self),
-            structureUnitKind: original.structureUnitKind, structureUnitCount: original.structureUnitCount ?? pdf?.pageCount,
+            structureUnitKind: original.structureUnitKind, structureUnitCount: original.structureUnitCount ?? renderedPageCount,
             documentTitle: original.documentTitle, documentAuthor: original.documentAuthor
         )
-    }
-
-    private static func png(page: PDFPage) -> Data? {
-        autoreleasepool {
-            let image = page.thumbnail(of: NSSize(width: 1536, height: 1536), for: .cropBox)
-            guard let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff) else { return nil }
-            return bitmap.representation(using: .png, properties: [:])
-        }
     }
 
     private static func png(imageData: Data) -> Data? {
@@ -173,7 +171,7 @@ public enum MultimodalAttachmentExtractor {
             guard let source = CGImageSourceCreateWithData(imageData as CFData, nil),
                   let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
-                    kCGImageSourceThumbnailMaxPixelSize: 1536,
+                    kCGImageSourceThumbnailMaxPixelSize: pagePixelSize,
                     kCGImageSourceCreateThumbnailWithTransform: true
                   ] as CFDictionary) else { return nil }
             return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])

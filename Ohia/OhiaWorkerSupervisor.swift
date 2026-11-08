@@ -574,7 +574,9 @@ final class WorkerFleetSupervisor {
                     requestData,
                     withReply: reply
                 )
-            }
+            },
+            pdfParseResolver: WorkerXPCCommandBroker.appPDFParseResolver,
+            pdfRenderResolver: WorkerXPCCommandBroker.appPDFRenderResolver
         )
     }
 

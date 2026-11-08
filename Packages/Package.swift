@@ -13,6 +13,7 @@ let package = Package(
         .library(name: "OhiaMail", targets: ["OhiaMail"]),
         .library(name: "OhiaMessagesReaderProtocol", targets: ["OhiaMessagesReaderProtocol"]),
         .executable(name: "OhiaMessagesReader", targets: ["OhiaMessagesReader"]),
+        .executable(name: "OhiaPDFParser", targets: ["OhiaPDFParser"]),
         .executable(name: "OhiaRetrievalWorker", targets: ["OhiaRetrievalWorker"]),
         .executable(name: "OhiaGenerativeWorker", targets: ["OhiaGenerativeWorker"]),
     ],
@@ -42,9 +43,21 @@ let package = Package(
                 "OhiaMessagesReaderSupport",
             ]
         ),
+        .target(name: "OhiaPDFParsing"),
+        // PDFKit and LiteParse code that opens untrusted PDFs. Only the
+        // sandboxed OhiaPDFParser service links it.
+        .target(
+            name: "OhiaPDFParserEngine",
+            dependencies: ["OhiaPDFParsing"]
+        ),
+        .executableTarget(
+            name: "OhiaPDFParser",
+            dependencies: ["OhiaPDFParserEngine", "OhiaPDFParsing"]
+        ),
         .target(
             name: "OhiaCore",
             dependencies: [
+                "OhiaPDFParsing",
                 .product(name: "USearch", package: "usearch"),
             ],
             linkerSettings: [.linkedLibrary("sqlite3")]
@@ -53,6 +66,7 @@ let package = Package(
             name: "OhiaIngest",
             dependencies: [
                 "OhiaCore",
+                "OhiaPDFParsing",
                 .product(name: "ZIPFoundation", package: "ZIPFoundation"),
             ]
         ),
@@ -61,6 +75,7 @@ let package = Package(
             dependencies: [
                 "OhiaCore",
                 "OhiaIngest",
+                "OhiaPDFParsing",
                 .product(name: "MLXLLM", package: "mlx-swift-lm"),
                 .product(name: "MLXLMCommon", package: "mlx-swift-lm"),
                 .product(name: "Transformers", package: "swift-transformers"),
@@ -88,7 +103,7 @@ let package = Package(
         ),
         .target(
             name: "OhiaWorkerSupport",
-            dependencies: ["OhiaCore", "OhiaML", "OhiaScheduler", "OhiaMail"]
+            dependencies: ["OhiaCore", "OhiaIngest", "OhiaPDFParsing", "OhiaML", "OhiaScheduler", "OhiaMail"]
         ),
         .executableTarget(
             name: "OhiaRetrievalWorker",
@@ -107,13 +122,15 @@ if FileManager.default.fileExists(atPath: Context.packageDirectory + "/Tests") {
     package.targets += [
         .testTarget(
             name: "OhiaCoreTests",
-            dependencies: ["OhiaCore", "OhiaMail"],
+            dependencies: ["OhiaCore", "OhiaMail", "OhiaPDFParsing"],
             resources: [.copy("Fixtures")]
         ),
         .testTarget(
             name: "OhiaIngestTests",
             dependencies: [
                 "OhiaIngest",
+                "OhiaPDFParsing",
+                "OhiaPDFParserEngine",
                 .product(name: "ZIPFoundation", package: "ZIPFoundation"),
             ],
             resources: [.copy("Fixtures")]
@@ -134,7 +151,7 @@ if FileManager.default.fileExists(atPath: Context.packageDirectory + "/Tests") {
         ),
         .testTarget(
             name: "OhiaSchedulerTests",
-            dependencies: ["OhiaScheduler", "OhiaWorkerSupport", "OhiaML"]
+            dependencies: ["OhiaScheduler", "OhiaWorkerSupport", "OhiaML", "OhiaPDFParsing"]
         ),
         .testTarget(
             name: "OhiaMailTests",

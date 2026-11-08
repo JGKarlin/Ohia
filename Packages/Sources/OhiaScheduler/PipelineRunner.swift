@@ -220,8 +220,7 @@ public final class PipelineRunner: @unchecked Sendable {
         self.hybridRetriever = hybridRetriever
         self.migrationCoordinator = migrationCoordinator ?? EmbeddingMigrationCoordinator(
             registry: resolvedRegistry,
-            vectorStore: vectorStore,
-            canonicalStore: canonicalStore
+            vectorStore: vectorStore
         )
         self.embeddingOrchestrator = embeddingOrchestrator ?? EmbeddingOrchestrator(
             embedder: embedder,
