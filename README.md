@@ -435,7 +435,7 @@ Ohia connects to mail over IMAP and SMTP.
 
 - **Microsoft accounts (Outlook.com, Hotmail, Live, Microsoft 365):** choose **Sign in with Microsoft**. A work or school account may need approval from the organization's IT department. If Microsoft asks for an administrator's approval, ask them to approve Ohia. The organization must also allow IMAP access to the mailbox.
 - **iCloud Mail:** create an app-specific password at [account.apple.com](https://account.apple.com) (Sign-In and Security, then App-Specific Passwords).
-- **Gmail:** turn on 2-Step Verification, then create an app password at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords). Make sure IMAP access is enabled in Gmail's settings. Signing in with Google directly will follow once Google finishes reviewing Ohia's Gmail access.
+- **Gmail:** turn on 2-Step Verification, then create an app password at [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords). Make sure IMAP access is enabled in Gmail's settings.
 - **Fastmail and most other providers:** use an app password from your provider's security settings.
 
 ## Your data
@@ -446,6 +446,8 @@ Ohia connects to mail over IMAP and SMTP.
 - Ohia does not sell email data or use it for advertising, and your mail is not used to train any shared or general-purpose model. The adapter trained on your sent mail stays in your local data.
 - Ohia does not add encryption of its own beyond what macOS provides. Turn on FileVault to encrypt the disk.
 - To remove Ohia completely, quit it, delete the app, delete the folder above, and delete the Ohia items from Keychain Access.
+
+The full policy is in [PRIVACY.md](PRIVACY.md).
 
 ## Building from source
 
