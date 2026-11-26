@@ -2,6 +2,17 @@
 
 All notable changes to Ohia are recorded here. Versions follow [semantic versioning](https://semver.org), and each one is published as a tagged release on GitHub with a notarized disk image.
 
+## [0.11.0] - 2026-11-26
+
+### Added
+
+- Automatic updates. Ohia checks GitHub once a day, downloads a new version in the background and installs it when you quit. If Ohia stays open for a week with an update waiting, it shows a notice. Ohia installs an update only if it carries the developer's update signature and a valid code signature. Check for Updates is in the Ohia menu, and Settings › General › Updates turns automatic checking and installing off.
+- Uninstall Ohia. The Ohia menu and the disk image both open a separate uninstaller that removes the app, its models, index and data, its saved passwords and sign-ins, its settings and privacy permissions, and the "Ohia" calendar. It never changes your mailboxes, Mail, Messages, Notes, Contacts or other calendars.
+
+### Changed
+
+- The disk image itself is now signed and notarized, not only the app inside it.
+
 ## [0.10.0] - 2026-11-08
 
 ### Added
@@ -47,5 +58,6 @@ First public release.
 - Accounts connect with an app password over IMAP and SMTP. Signing in with Google or Microsoft accounts is not included, so Microsoft accounts (Outlook.com, Hotmail, Microsoft 365) cannot connect in this release.
 - Apple silicon and macOS 26.4 or later only.
 
+[0.11.0]: https://github.com/JGKarlin/Ohia/releases/tag/v0.11.0
 [0.10.0]: https://github.com/JGKarlin/Ohia/releases/tag/v0.10.0
 [0.9.0]: https://github.com/JGKarlin/Ohia/releases/tag/v0.9.0

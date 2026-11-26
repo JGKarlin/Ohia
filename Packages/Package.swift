@@ -11,6 +11,7 @@ let package = Package(
         .library(name: "OhiaML", targets: ["OhiaML"]),
         .library(name: "OhiaScheduler", targets: ["OhiaScheduler"]),
         .library(name: "OhiaMail", targets: ["OhiaMail"]),
+        .library(name: "OhiaUninstallKit", targets: ["OhiaUninstallKit"]),
         .library(name: "OhiaMessagesReaderProtocol", targets: ["OhiaMessagesReaderProtocol"]),
         .executable(name: "OhiaMessagesReader", targets: ["OhiaMessagesReader"]),
         .executable(name: "OhiaPDFParser", targets: ["OhiaPDFParser"]),
@@ -31,6 +32,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "OhiaMessagesReaderProtocol"),
+        .target(name: "OhiaUninstallKit"),
         .target(
             name: "OhiaMessagesReaderSupport",
             dependencies: ["OhiaMessagesReaderProtocol"],
@@ -152,6 +154,10 @@ if FileManager.default.fileExists(atPath: Context.packageDirectory + "/Tests") {
         .testTarget(
             name: "OhiaSchedulerTests",
             dependencies: ["OhiaScheduler", "OhiaWorkerSupport", "OhiaML", "OhiaPDFParsing"]
+        ),
+        .testTarget(
+            name: "OhiaUninstallKitTests",
+            dependencies: ["OhiaUninstallKit"]
         ),
         .testTarget(
             name: "OhiaMailTests",

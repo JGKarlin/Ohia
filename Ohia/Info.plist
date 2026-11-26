@@ -27,6 +27,23 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 
+	<!-- Sparkle. SUFeedURL and SUPublicEDKey are empty unless the release
+	     script passes real values, so other builds never start an updater. -->
+	<key>SUFeedURL</key>
+	<string>$(OHIA_UPDATE_FEED_URL)</string>
+	<key>SUPublicEDKey</key>
+	<string>$(OHIA_UPDATE_PUBLIC_ED_KEY)</string>
+	<key>SUEnableInstallerLauncherService</key>
+	<true/>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
+	<key>SURequireSignedFeed</key>
+	<true/>
+
 	<!-- Usage-description strings formerly driven by INFOPLIST_KEY_* build
 	     settings. -->
 	<key>NSAppleEventsUsageDescription</key>

@@ -6,7 +6,13 @@ public struct IMAPCredentials: Sendable {
 
     public static let service = "com.ohia.imap"
 
-    public init() {}
+    /// The keychain service passwords are stored under: `service` in the app,
+    /// a test-only name in tests, so they never write under Ohia's own.
+    public let keychainService: String
+
+    public init(keychainService: String = IMAPCredentials.service) {
+        self.keychainService = keychainService
+    }
 
     /// Validate password authentication and return only the opaque Keychain
     /// reference. The main app's credential broker performs the actual read.
@@ -19,7 +25,7 @@ public struct IMAPCredentials: Sendable {
     /// Store a password for the account; sets `imapKeychainRef` if unset.
     public func storePassword(_ password: String, for account: Account) throws {
         let ref = account.imapKeychainRef ?? "imap-password-\(account.id.uuidString)"
-        try KeychainHelpers.set(data: Data(password.utf8), service: Self.service, account: ref)
+        try KeychainHelpers.set(data: Data(password.utf8), service: keychainService, account: ref)
         account.imapKeychainRef = ref
     }
 }

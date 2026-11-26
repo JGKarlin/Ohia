@@ -34,6 +34,8 @@ enum TrainingMenuCommandRequest {
 }
 
 struct OhiaMenuCommands: Commands {
+    let updateController: OhiaUpdateController?
+
     @Environment(\.openWindow) private var openWindow
     @FocusedValue(\.sendAgainCommandTarget) private var sendAgainCommandTarget
     @FocusedValue(\.focusedEmailPrintCommandTarget) private var focusedEmailPrintCommandTarget
@@ -41,6 +43,20 @@ struct OhiaMenuCommands: Commands {
     private var hasCompletedOnboarding = false
 
     var body: some Commands {
+        // App menu, after About: update check (only in builds with a feed)
+        // and the uninstaller. Neither has a keyboard shortcut by design.
+        CommandGroup(after: .appInfo) {
+            if let updateController {
+                Button("Check for Updates…", systemImage: "arrow.down.circle") {
+                    updateController.checkForUpdates()
+                }
+                .disabled(!updateController.canCheckForUpdates)
+            }
+            Button("Uninstall Ohia…", systemImage: "trash") {
+                UninstallerLauncher.launch()
+            }
+        }
+
         // File → New contains only user-facing creation actions. Replacing the
         // system group also suppresses SwiftUI's automatic entries for the
         // DEBUG-only design WindowGroups, which remain available under Tools.

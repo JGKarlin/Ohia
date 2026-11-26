@@ -158,6 +158,9 @@ private struct CachedOAuthTokens {
 public actor OAuthTokenStore {
     public static let service = "com.ohia.oauth"
 
+    /// The keychain service tokens are kept under: `service` in the app,
+    /// a test-only name in tests, so they never write under Ohia's own.
+    private let keychainService: String
     private let http: HTTPClient
     private let brokerClient: OAuthTokenBrokerClient?
     private let allowKeychainInteraction: Bool
@@ -169,13 +172,15 @@ public actor OAuthTokenStore {
     public init(
         http: HTTPClient = URLSessionHTTPClient(),
         brokerClient: OAuthTokenBrokerClient? = nil,
-        allowKeychainInteraction: Bool = KeychainHelpers.allowsUserInteractionByDefault
+        allowKeychainInteraction: Bool = KeychainHelpers.allowsUserInteractionByDefault,
+        keychainService: String = OAuthTokenStore.service
     ) {
         self.init(
             http: http,
             brokerClient: brokerClient,
             allowKeychainInteraction: allowKeychainInteraction,
-            persistence: KeychainOAuthTokenPersistence()
+            persistence: KeychainOAuthTokenPersistence(),
+            keychainService: keychainService
         )
     }
 
@@ -184,8 +189,10 @@ public actor OAuthTokenStore {
         brokerClient: OAuthTokenBrokerClient? = nil,
         allowKeychainInteraction: Bool = KeychainHelpers.allowsUserInteractionByDefault,
         persistence: OAuthTokenPersistence,
-        cacheInvalidation: OAuthTokenCacheInvalidation = .shared
+        cacheInvalidation: OAuthTokenCacheInvalidation = .shared,
+        keychainService: String = OAuthTokenStore.service
     ) {
+        self.keychainService = keychainService
         self.http = http
         self.brokerClient = brokerClient
         self.allowKeychainInteraction = allowKeychainInteraction
@@ -271,7 +278,7 @@ public actor OAuthTokenStore {
             throw MailCredentialBrokerError.invalidRequest
         }
         try persistence.delete(
-            service: Self.service,
+            service: keychainService,
             account: keychainRef,
             allowUserInteraction: allowKeychainInteraction
         )
@@ -349,7 +356,7 @@ public actor OAuthTokenStore {
         }
         cachedTokensByKeychainRef[keychainRef] = nil
         guard let data = try persistence.read(
-            service: Self.service,
+            service: keychainService,
             account: keychainRef,
             allowUserInteraction: allowKeychainInteraction
         ) else {
@@ -366,7 +373,7 @@ public actor OAuthTokenStore {
     private func persist(_ tokens: Tokens, keychainRef: String) throws {
         try persistence.write(
             data: try JSONEncoder().encode(tokens),
-            service: Self.service,
+            service: keychainService,
             account: keychainRef,
             allowUserInteraction: allowKeychainInteraction
         )

@@ -258,7 +258,7 @@ final class DeadlineCalendarSync {
     static let calendarTitle = DeadlineCalendarNamingPolicy.currentTitle
     static let calendarStoreDidChangeNotification = Notification.Name.EKEventStoreChanged
 
-    private static let calendarIdentifierKey = "ohia.deadline.calendarIdentifier"
+    static let calendarIdentifierKey = "ohia.deadline.calendarIdentifier"
     private static let logger = Logger(
         subsystem: "org.jgkarlin.Ohia",
         category: "DeadlineCalendarSync"

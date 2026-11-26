@@ -423,11 +423,15 @@ Alongside MCP, Ohia registers native tools for Calendar, Contacts and Reminders,
 
 ## Install
 
-1. Download `Ohia-0.9.0.dmg` from the [latest release](https://github.com/JGKarlin/Ohia/releases/latest).
-2. Open it and drag Ohia to Applications. The app is signed with a Developer ID and notarized by Apple.
+1. Download the disk image, `Ohia-<version>.dmg`, from the [latest release](https://github.com/JGKarlin/Ohia/releases/latest).
+2. Open it and drag Ohia to Applications. The disk image and the app are signed with a Developer ID and notarized by Apple.
 3. On first launch, Ohia walks you through choosing a model and connecting an account. It then downloads the models from Hugging Face, which can take a while.
 
-Each release lists the SHA-256 checksum of the disk image, so you can check a download with `shasum -a 256 Ohia-0.9.0.dmg`.
+Each release lists the SHA-256 checksum of the disk image, so you can check a download with `shasum -a 256 Ohia-<version>.dmg`.
+
+From version 0.11.0, Ohia keeps itself up to date: it checks GitHub once a day, downloads a new version in the background and installs it when you quit. If Ohia stays open for a week with an update waiting, it shows a notice. Settings › General › Updates turns this off, and [PRIVACY.md](PRIVACY.md) describes what an update check sends. Earlier versions have no updater, so download 0.11.0 once by hand.
+
+To remove Ohia and everything it stored on your Mac, choose Uninstall Ohia in the Ohia menu, or open Uninstall Ohia from the disk image.
 
 ## Connecting mail
 

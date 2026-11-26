@@ -312,6 +312,7 @@ struct GeneralSettingsView: View {
                 RemoteImageAllowlistSection()
                 deletionCard
                 helpCard
+                UpdatesSettingsCard()
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 16)

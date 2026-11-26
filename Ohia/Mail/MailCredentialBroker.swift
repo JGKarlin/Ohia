@@ -11,22 +11,36 @@ final class MailCredentialBroker: MailCredentialRequesting, MailPasswordResolvin
     static let shared = MailCredentialBroker()
 
     private let oauthStore: OAuthTokenStore
+    /// The keychain services passwords are read from: Ohia's own in the app,
+    /// test-only names in tests.
+    private let imapKeychainService: String
+    private let smtpKeychainService: String
     private let requestAuthorizer: RequestAuthorizer
 
     init(
         oauthStore: OAuthTokenStore = OAuthTokenStore(brokerClient: nil),
+        imapKeychainService: String = IMAPCredentials.service,
+        smtpKeychainService: String = SMTPCredentials.service,
         requestAuthorizer: @escaping RequestAuthorizer = { _ in true }
     ) {
         self.oauthStore = oauthStore
+        self.imapKeychainService = imapKeychainService
+        self.smtpKeychainService = smtpKeychainService
         self.requestAuthorizer = requestAuthorizer
     }
 
     @MainActor
     convenience init(
         modelContainer: ModelContainer,
-        oauthStore: OAuthTokenStore = OAuthTokenStore(brokerClient: nil)
+        oauthStore: OAuthTokenStore = OAuthTokenStore(brokerClient: nil),
+        imapKeychainService: String = IMAPCredentials.service,
+        smtpKeychainService: String = SMTPCredentials.service
     ) {
-        self.init(oauthStore: oauthStore) { request in
+        self.init(
+            oauthStore: oauthStore,
+            imapKeychainService: imapKeychainService,
+            smtpKeychainService: smtpKeychainService
+        ) { request in
             Self.isAuthorized(request, in: ModelContext(modelContainer))
         }
     }
@@ -174,9 +188,9 @@ final class MailCredentialBroker: MailCredentialRequesting, MailPasswordResolvin
         let service: String
         switch kind {
         case .imapPassword:
-            service = IMAPCredentials.service
+            service = imapKeychainService
         case .smtpPassword:
-            service = SMTPCredentials.service
+            service = smtpKeychainService
         default:
             throw MailCredentialBrokerError.invalidRequest
         }

@@ -1111,17 +1111,24 @@ nonisolated enum OhiaLaunchMode: Equatable {
     case normal
     case hostedTests
     case secondaryInstance
+    case uninstallCleanup(resultToken: UUID)
 
     static func resolve(
         isRunningHostedTests: Bool,
         isSecondaryInstance: Bool,
-        arguments _: [String]
+        arguments: [String]
     ) -> OhiaLaunchMode {
         if isRunningHostedTests {
             return .hostedTests
         }
         if isSecondaryInstance {
             return .secondaryInstance
+        }
+        if arguments.contains("--uninstall-cleanup"),
+           let flag = arguments.firstIndex(of: "--result-token"),
+           arguments.indices.contains(flag + 1),
+           let token = UUID(uuidString: arguments[flag + 1]) {
+            return .uninstallCleanup(resultToken: token)
         }
         return .normal
     }
@@ -1131,7 +1138,7 @@ nonisolated enum OhiaLaunchMode: Equatable {
     }
 
     var suppressesPrimaryWindow: Bool {
-        self == .hostedTests || self == .secondaryInstance
+        self != .normal
     }
 
     var suppressesAuxiliaryWindows: Bool {
@@ -1347,6 +1354,7 @@ struct OhiaApp: App {
     @State var constellationActiveMonitor: ConstellationActiveMonitor?
     @State var appActivityMonitor: SharedAppActivityMonitor?
     @State private var pipelinePauseState = PipelinePauseState()
+    @State var updateController: OhiaUpdateController?
 
     init() {
         let hostedTests = OhiaLaunchEnvironment.isRunningHostedTests
@@ -1358,6 +1366,13 @@ struct OhiaApp: App {
             arguments: CommandLine.arguments
         )
         self.launchMode = launchMode
+        if case .uninstallCleanup(let resultToken) = launchMode {
+            UninstallCleanupMode.perform(resultToken: resultToken)
+        }
+        if launchMode == .normal, let updateConfiguration = OhiaUpdateConfiguration.current {
+            self._updateController = State(
+                initialValue: OhiaUpdateController(configuration: updateConfiguration))
+        }
         let shouldGateSecondaryWindows = launchMode == .normal
             && OhiaSharedDefaults.store.bool(forKey: "hasCompletedOnboarding")
         self._startupSplashVisibility = State(initialValue: StartupSplashVisibility(
@@ -1610,7 +1625,7 @@ struct OhiaApp: App {
         .defaultSize(width: 1440, height: 900)
         .defaultLaunchBehavior(launchMode.suppressesPrimaryWindow ? .suppressed : .automatic)
         .keyboardShortcut("1", modifiers: [.command])
-        .commands { OhiaMenuCommands() }
+        .commands { OhiaMenuCommands(updateController: updateController) }
 
         Window("Composer", id: OhiaWindowID.composer) {
             composerSceneContent
@@ -1649,6 +1664,7 @@ struct OhiaApp: App {
             .environment(imapSessionManager)
             .environment(constellationActiveMonitor)
             .environment(pipelinePauseState)
+            .environment(updateController)
             .environment(\.messagesTranscriptBroker, runtime.messagesTranscriptBroker)
             .environment(runtime.automaticMessagesAccessCoordinator)
             .environment(\.workerFleetSupervisor, runtime.workerSupervisor)
@@ -1695,6 +1711,7 @@ struct OhiaApp: App {
                     .environment(trainingStatusPublisher)
                     .environment(imapSessionManager)
                     .environment(pipelinePauseState)
+                    .environment(updateController)
                     .environment(\.messagesTranscriptBroker, runtime.messagesTranscriptBroker)
                     .environment(\.workerFleetSupervisor, runtime.workerSupervisor)
                     .modelContainer(runtime.modelContainer)

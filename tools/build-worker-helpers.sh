@@ -59,7 +59,10 @@ install_liteparse_helper() {
     "$SRCROOT/tools/verify-liteparse-helper.sh" "$helper_dst"
     /usr/bin/find "$helper_dst" -type f \( -name "*.node" -o -name "*.dylib" \) \
         -exec /usr/bin/codesign --force --sign "$sign_identity" --options runtime "$timestamp_flag" {} \;
-    /usr/bin/codesign --force --sign "$sign_identity" "$timestamp_flag" "$helper_dst/lit"
+    # lit is a shell script that only the build-time check above runs; Ohia
+    # starts Node directly. It stays unsigned, sealed as a resource of the
+    # service: a signed script keeps its signature in extended attributes,
+    # which Sparkle cannot diff, so no delta update could be made from a build.
     /usr/bin/codesign \
         --force \
         --sign "$sign_identity" \

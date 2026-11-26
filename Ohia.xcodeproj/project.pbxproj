@@ -9,16 +9,42 @@
 /* Begin PBXBuildFile section */
 		8C3D61722F8FA18B00C04BE1 /* OhiaCore in Frameworks */ = {isa = PBXBuildFile; productRef = 8C3D61712F8FA18B00C04BE1 /* OhiaCore */; };
 		8C3D61742F8FA18B00C04BE1 /* OhiaIngest in Frameworks */ = {isa = PBXBuildFile; productRef = 8C3D61732F8FA18B00C04BE1 /* OhiaIngest */; };
+		8C3D61B02F8FA18B00C04BE1 /* OhiaUninstallKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8C3D61B12F8FA18B00C04BE1 /* OhiaUninstallKit */; };
 		8C3D61762F8FA18B00C04BE1 /* OhiaML in Frameworks */ = {isa = PBXBuildFile; productRef = 8C3D61752F8FA18B00C04BE1 /* OhiaML */; };
 		8C3D61782F8FA18B00C04BE1 /* OhiaScheduler in Frameworks */ = {isa = PBXBuildFile; productRef = 8C3D61772F8FA18B00C04BE1 /* OhiaScheduler */; };
 		8C3D617A2F8FA18B00C04BE1 /* OhiaMessagesReaderProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 8C3D61792F8FA18B00C04BE1 /* OhiaMessagesReaderProtocol */; };
+		8C3D61C22F9A000000C04BE1 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 8C3D61C12F9A000000C04BE1 /* Sparkle */; };
+		8CB0000C2FB0000000B0000C /* OhiaUninstallKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8CB0000D2FB0000000B0000D /* OhiaUninstallKit */; };
+		8CB0000F2FB0000000B0000F /* Uninstall Ohia.app in Embed Uninstaller */ = {isa = PBXBuildFile; fileRef = 8CB000012FB0000000B00001 /* Uninstall Ohia.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		8CB000072FB0000000B00007 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8C9136592F8F9D9300CD3696 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8CB000062FB0000000B00006;
+			remoteInfo = OhiaUninstaller;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		8CB0000E2FB0000000B0000E /* Embed Uninstaller */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Helpers;
+			dstSubfolderSpec = 1;
+			files = (
+				8CB0000F2FB0000000B0000F /* Uninstall Ohia.app in Embed Uninstaller */,
+			);
+			name = "Embed Uninstaller";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		8C9136612F8F9D9300CD3696 /* Ohia.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Ohia.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8CB000012FB0000000B00001 /* Uninstall Ohia.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Uninstall Ohia.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -29,6 +55,15 @@
 			);
 			target = 8C9136602F8F9D9300CD3696 /* Ohia */;
 		};
+		8CB000102FB0000000B00010 /* Exceptions for "Ohia" folder in "OhiaUninstaller" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Assets.xcassets,
+				Theme/EmblemButtonStyle.swift,
+				Theme/OhiaColors.swift,
+			);
+			target = 8CB000062FB0000000B00006 /* OhiaUninstaller */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -36,8 +71,14 @@
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				8C5722C92F9A538D00931843 /* Exceptions for "Ohia" folder in "Ohia" target */,
+				8CB000102FB0000000B00010 /* Exceptions for "Ohia" folder in "OhiaUninstaller" target */,
 			);
 			path = Ohia;
+			sourceTree = "<group>";
+		};
+		8CB000022FB0000000B00002 /* OhiaUninstaller */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = OhiaUninstaller;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -51,7 +92,17 @@
 				8C3D61782F8FA18B00C04BE1 /* OhiaScheduler in Frameworks */,
 				8C3D61742F8FA18B00C04BE1 /* OhiaIngest in Frameworks */,
 				8C3D61762F8FA18B00C04BE1 /* OhiaML in Frameworks */,
+				8C3D61B02F8FA18B00C04BE1 /* OhiaUninstallKit in Frameworks */,
 				8C3D617A2F8FA18B00C04BE1 /* OhiaMessagesReaderProtocol in Frameworks */,
+				8C3D61C22F9A000000C04BE1 /* Sparkle in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8CB000032FB0000000B00003 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8CB0000C2FB0000000B0000C /* OhiaUninstallKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -69,6 +120,7 @@
 			isa = PBXGroup;
 			children = (
 				8C9136632F8F9D9300CD3696 /* Ohia */,
+				8CB000022FB0000000B00002 /* OhiaUninstaller */,
 				8C3D61702F8FA18B00C04BE1 /* Frameworks */,
 				8C9136622F8F9D9300CD3696 /* Products */,
 			);
@@ -78,6 +130,7 @@
 			isa = PBXGroup;
 			children = (
 				8C9136612F8F9D9300CD3696 /* Ohia.app */,
+				8CB000012FB0000000B00001 /* Uninstall Ohia.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -94,12 +147,14 @@
 				8C91365D2F8F9D9300CD3696 /* Sources */,
 				8C91365E2F8F9D9300CD3696 /* Frameworks */,
 				8C91365F2F8F9D9300CD3696 /* Resources */,
+				8CB0000E2FB0000000B0000E /* Embed Uninstaller */,
 				8C7A0B132FA7000000F00D04 /* Register Google OAuth Redirect Scheme */,
 				8C7A0B122FA7000000F00D03 /* Build Worker Helpers with Xcode */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				8CB000082FB0000000B00008 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				8C9136632F8F9D9300CD3696 /* Ohia */,
@@ -109,11 +164,36 @@
 				8C3D61712F8FA18B00C04BE1 /* OhiaCore */,
 				8C3D61732F8FA18B00C04BE1 /* OhiaIngest */,
 				8C3D61752F8FA18B00C04BE1 /* OhiaML */,
+				8C3D61B12F8FA18B00C04BE1 /* OhiaUninstallKit */,
 				8C3D61772F8FA18B00C04BE1 /* OhiaScheduler */,
 				8C3D61792F8FA18B00C04BE1 /* OhiaMessagesReaderProtocol */,
+				8C3D61C12F9A000000C04BE1 /* Sparkle */,
 			);
 			productName = Ohia;
 			productReference = 8C9136612F8F9D9300CD3696 /* Ohia.app */;
+			productType = "com.apple.product-type.application";
+		};
+		8CB000062FB0000000B00006 /* OhiaUninstaller */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8CB0000B2FB0000000B0000B /* Build configuration list for PBXNativeTarget "OhiaUninstaller" */;
+			buildPhases = (
+				8CB000042FB0000000B00004 /* Sources */,
+				8CB000032FB0000000B00003 /* Frameworks */,
+				8CB000052FB0000000B00005 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				8CB000022FB0000000B00002 /* OhiaUninstaller */,
+			);
+			name = OhiaUninstaller;
+			packageProductDependencies = (
+				8CB0000D2FB0000000B0000D /* OhiaUninstallKit */,
+			);
+			productName = OhiaUninstaller;
+			productReference = 8CB000012FB0000000B00001 /* Uninstall Ohia.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -129,6 +209,9 @@
 					8C9136602F8F9D9300CD3696 = {
 						CreatedOnToolsVersion = 26.4;
 					};
+					8CB000062FB0000000B00006 = {
+						CreatedOnToolsVersion = 26.4;
+					};
 				};
 			};
 			buildConfigurationList = 8C91365C2F8F9D9300CD3696 /* Build configuration list for PBXProject "Ohia" */;
@@ -142,6 +225,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				8C3D616F2F8FA11F00C04BE1 /* XCLocalSwiftPackageReference "Packages" */,
+				8C3D61C02F9A000000C04BE1 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8C9136622F8F9D9300CD3696 /* Products */;
@@ -149,12 +233,20 @@
 			projectRoot = "";
 			targets = (
 				8C9136602F8F9D9300CD3696 /* Ohia */,
+				8CB000062FB0000000B00006 /* OhiaUninstaller */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		8C91365F2F8F9D9300CD3696 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8CB000052FB0000000B00005 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -332,9 +424,21 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		8CB000042FB0000000B00004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		8CB000082FB0000000B00008 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8CB000062FB0000000B00006 /* OhiaUninstaller */;
+			targetProxy = 8CB000072FB0000000B00007 /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
@@ -465,12 +569,14 @@
 		8C91366D2F8F9D9400CD3696 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				OHIA_UPDATE_FEED_URL = "";
+				OHIA_UPDATE_PUBLIC_ED_KEY = "";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Ohia/Ohia.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 3T72U4Q7A5;
 				ENABLE_APP_SANDBOX = YES;
@@ -483,7 +589,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.10.0;
+				MARKETING_VERSION = 0.11.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.jgkarlin.Ohia;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -499,13 +605,15 @@
 		8C91366E2F8F9D9400CD3696 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				OHIA_UPDATE_FEED_URL = "";
+				OHIA_UPDATE_PUBLIC_ED_KEY = "";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Ohia/Ohia.entitlements;
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 2;
+				CURRENT_PROJECT_VERSION = 3;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 3T72U4Q7A5;
 				ENABLE_APP_SANDBOX = YES;
@@ -518,11 +626,78 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.10.0;
+				MARKETING_VERSION = 0.11.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.jgkarlin.Ohia;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		8CB000092FB0000000B00009 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = OhiaUninstaller/OhiaUninstaller.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 3;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3T72U4Q7A5;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Uninstall Ohia";
+				INFOPLIST_KEY_LSUIElement = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				MARKETING_VERSION = 0.11.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.jgkarlin.Ohia.Uninstaller;
+				PRODUCT_NAME = "Uninstall Ohia";
+				SKIP_INSTALL = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		8CB0000A2FB0000000B0000A /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = OhiaUninstaller/OhiaUninstaller.entitlements;
+				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 3;
+				DEAD_CODE_STRIPPING = YES;
+				DEVELOPMENT_TEAM = 3T72U4Q7A5;
+				ENABLE_APP_SANDBOX = NO;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Uninstall Ohia";
+				INFOPLIST_KEY_LSUIElement = NO;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.4;
+				MARKETING_VERSION = 0.11.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.jgkarlin.Ohia.Uninstaller;
+				PRODUCT_NAME = "Uninstall Ohia";
+				SKIP_INSTALL = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -552,6 +727,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		8CB0000B2FB0000000B0000B /* Build configuration list for PBXNativeTarget "OhiaUninstaller" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8CB000092FB0000000B00009 /* Debug */,
+				8CB0000A2FB0000000B0000A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -560,6 +744,17 @@
 			relativePath = Packages;
 		};
 /* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		8C3D61C02F9A000000C04BE1 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.10.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		8C3D61712F8FA18B00C04BE1 /* OhiaCore */ = {
@@ -571,6 +766,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8C3D616F2F8FA11F00C04BE1 /* XCLocalSwiftPackageReference "Packages" */;
 			productName = OhiaIngest;
+		};
+		8C3D61B12F8FA18B00C04BE1 /* OhiaUninstallKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C3D616F2F8FA11F00C04BE1 /* XCLocalSwiftPackageReference "Packages" */;
+			productName = OhiaUninstallKit;
 		};
 		8C3D61752F8FA18B00C04BE1 /* OhiaML */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -586,6 +786,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8C3D616F2F8FA11F00C04BE1 /* XCLocalSwiftPackageReference "Packages" */;
 			productName = OhiaMessagesReaderProtocol;
+		};
+		8C3D61C12F9A000000C04BE1 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C3D61C02F9A000000C04BE1 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
+		};
+		8CB0000D2FB0000000B0000D /* OhiaUninstallKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C3D616F2F8FA11F00C04BE1 /* XCLocalSwiftPackageReference "Packages" */;
+			productName = OhiaUninstallKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
