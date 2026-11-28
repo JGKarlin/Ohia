@@ -34,7 +34,7 @@ Ohia does not sell, rent or share your data with anyone, and does not use it for
 - Mail, the search index, model adapters, memories and settings are stored in `~/Library/Group Containers/group.org.jgkarlin.Ohia/` on your Mac.
 - Passwords and sign-in tokens are kept in your macOS login keychain.
 - Connections to mail providers use TLS, and Ohia never sends mail unencrypted to another machine.
-- PDFs are opened only in a sandboxed service with no network access and no access to Ohia's data.
+- PDFs are opened, and the text in images is read, only in a sandboxed service with no network access and no access to Ohia's data.
 - Ohia does not add encryption of its own beyond what macOS provides. Turn on FileVault to encrypt your disk.
 
 ## Retention and deletion

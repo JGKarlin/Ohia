@@ -425,42 +425,26 @@ public final class QuestionGroundingResolver: @unchecked Sendable {
         )
     }
 
+    /// The timeout is the action's Dispatch timer, not a sleeping task beside
+    /// the generation: the generation holds a Swift concurrency thread, and a
+    /// sleeping task waits behind it, and behind any other blocking work,
+    /// past the timeout it enforces.
     private func generateOffMain(prompt: PrefixCachedPrompt) async throws -> String {
-        let cancellation = GenerationCancellation()
-        return try await withTaskCancellationHandler {
-            try await withThrowingTaskGroup(of: String.self) { group in
-                group.addTask(priority: .userInitiated) {
-                    try self.generate(prompt: prompt, cancellation: cancellation)
-                }
-                group.addTask {
-                    let nanoseconds = UInt64(
-                        min(self.timeout, Double(UInt64.max) / 1_000_000_000)
-                            * 1_000_000_000
-                    )
-                    try await Task.sleep(nanoseconds: nanoseconds)
-                    cancellation.cancel()
-                    throw TrainingEngineError.generationFailed(
-                        "Question grounding timed out after \(self.timeout) seconds."
-                    )
-                }
-
-                do {
-                    guard let result = try await group.next() else {
-                        throw TrainingEngineError.generationFailed(
-                            "Question grounding ended without output."
-                        )
-                    }
-                    group.cancelAll()
-                    return result
-                } catch {
-                    cancellation.cancel()
-                    group.cancelAll()
-                    throw error
-                }
+        let action = ComposerGenerationAction(timeout: timeout)
+        let timedOut = TrainingEngineError.generationFailed(
+            "Question grounding timed out after \(timeout) seconds."
+        )
+        let text: String
+        do {
+            text = try await action.runBounded {
+                try self.generate(prompt: prompt, cancellation: action.cancellation)
             }
-        } onCancel: {
-            cancellation.cancel()
+        } catch where action.isPastDeadline {
+            throw timedOut
         }
+        // An engine stopped by the timeout may return what it had so far.
+        if action.cancellation.isCancelled, action.isPastDeadline { throw timedOut }
+        return text
     }
 
     private func generate(

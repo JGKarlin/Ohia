@@ -707,6 +707,11 @@ public final class MailLineStream: NSObject, StreamDelegate, @unchecked Sendable
 
     // MARK: - Helpers
 
+    /// Whether a `readLine` or `readBytes` call is parked waiting for data.
+    var hasParkedRead: Bool {
+        stateQueue.sync { pendingRead != nil || pendingByteRead != nil }
+    }
+
     private func takePendingRead(id: UUID) -> CheckedContinuation<String, Error>? {
         stateQueue.sync {
             guard let pending = self.pendingRead, pending.id == id else {

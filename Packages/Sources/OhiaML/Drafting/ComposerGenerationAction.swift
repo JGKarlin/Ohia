@@ -6,18 +6,23 @@ public final class ComposerGenerationAction: Sendable {
     public let id: UUID
     public let deadline: Date
     public let cancellation: GenerationCancellation
+    /// The clock the deadline and every time measured within the action are
+    /// read from: the wall clock unless a test supplies its own.
+    public let now: @Sendable () -> Date
 
     public init(id: UUID = UUID(), timeout: TimeInterval = 60,
-                cancellation: GenerationCancellation = GenerationCancellation()) {
+                cancellation: GenerationCancellation = GenerationCancellation(),
+                now: @escaping @Sendable () -> Date = { Date() }) {
         self.id = id
-        self.deadline = Date().addingTimeInterval(max(0, timeout))
+        self.now = now
+        self.deadline = now().addingTimeInterval(max(0, timeout))
         self.cancellation = cancellation
     }
 
     public func cancel() { cancellation.cancel() }
 
     public func check() throws {
-        guard Date() < deadline else {
+        guard !isPastDeadline else {
             cancellation.cancel()
             throw ComposerContentError.deadlineExceeded
         }
@@ -25,7 +30,54 @@ public final class ComposerGenerationAction: Sendable {
         try cancellation.checkCancellation()
     }
 
-    public var remainingSeconds: TimeInterval { max(0, deadline.timeIntervalSinceNow) }
+    public var isPastDeadline: Bool { now() >= deadline }
+
+    public var remainingSeconds: TimeInterval { max(0, deadline.timeIntervalSince(now())) }
+}
+
+/// Cancels an action when its deadline passes or its caller's token is
+/// cancelled. Neither needs a Swift task: the deadline is a Dispatch timer
+/// that wakes once, at the deadline, and the caller's cancellation reaches
+/// the action as it happens. The model calls an action bounds are
+/// synchronous and hold Swift concurrency threads while they run, and a
+/// watchdog task would wait behind them, and behind any other blocking
+/// work, past the deadline it enforces.
+public final class ComposerActionWatchdog: Sendable {
+    private let deadline: GenerationDeadlineTimer
+    private let caller: GenerationCancellationRegistration?
+
+    public init(action: ComposerGenerationAction, caller: GenerationCancellation? = nil) {
+        deadline = GenerationDeadlineTimer(deadline: action.deadline, now: action.now) { action.cancel() }
+        self.caller = caller?.onCancel { action.cancel() }
+    }
+
+    /// Stops watching. The action is left as it is.
+    public func cancel() {
+        deadline.cancel()
+        caller?.remove()
+    }
+
+    deinit { cancel() }
+}
+
+extension ComposerGenerationAction {
+    /// Runs synchronous model work bounded by this action: on a task of its
+    /// own, under the action's deadline, with a cancellation of the action,
+    /// from any source, reaching the work as task cancellation too, for the
+    /// engine checks that read only that, and the caller's task cancellation
+    /// reaching the action.
+    public func runBounded<Value: Sendable>(
+        _ work: @escaping @Sendable () throws -> Value
+    ) async throws -> Value {
+        let watchdog = ComposerActionWatchdog(action: self)
+        defer { watchdog.cancel() }
+        return try await withTaskCancellationHandler {
+            let task = Task.detached(priority: .userInitiated) { try work() }
+            let forwarding = cancellation.onCancel { task.cancel() }
+            defer { forwarding.remove() }
+            return try await task.value
+        } onCancel: { self.cancel() }
+    }
 }
 
 public enum ComposerModelRole: String, Codable, Sendable, Equatable {

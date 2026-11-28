@@ -502,6 +502,8 @@ public extension TrainingEngine {
 public final class GenerationCancellation: @unchecked Sendable {
     private let lock = NSLock()
     private var cancelled = false
+    private var handlers: [UInt64: @Sendable () -> Void] = [:]
+    private var nextHandlerID: UInt64 = 0
 
     public init() {}
 
@@ -511,8 +513,16 @@ public final class GenerationCancellation: @unchecked Sendable {
     }
 
     public func cancel() {
-        lock.lock(); defer { lock.unlock() }
+        lock.lock()
+        guard !cancelled else {
+            lock.unlock()
+            return
+        }
         cancelled = true
+        let pending = handlers.values
+        handlers = [:]
+        lock.unlock()
+        for handler in pending { handler() }
     }
 
     public func checkCancellation() throws {
@@ -520,6 +530,85 @@ public final class GenerationCancellation: @unchecked Sendable {
             throw CancellationError()
         }
     }
+
+    /// Runs `handler` once when this token is cancelled, on the thread that
+    /// cancels it, or right away when it already is. Nothing has to watch the
+    /// token for it: a watcher would need a Swift concurrency thread, and the
+    /// generation it stops holds one, as can every other thread at the time.
+    /// Removing the returned registration first drops the handler.
+    public func onCancel(_ handler: @escaping @Sendable () -> Void) -> GenerationCancellationRegistration {
+        lock.lock()
+        guard !cancelled else {
+            lock.unlock()
+            handler()
+            return GenerationCancellationRegistration(token: nil, id: 0)
+        }
+        nextHandlerID += 1
+        let id = nextHandlerID
+        handlers[id] = handler
+        lock.unlock()
+        return GenerationCancellationRegistration(token: self, id: id)
+    }
+
+    fileprivate func removeHandler(_ id: UInt64) {
+        lock.lock(); defer { lock.unlock() }
+        handlers[id] = nil
+    }
+}
+
+/// A handler added with `GenerationCancellation.onCancel(_:)`.
+public struct GenerationCancellationRegistration: Sendable {
+    fileprivate let token: GenerationCancellation?
+    fileprivate let id: UInt64
+
+    /// Drops the handler if the token has not been cancelled yet.
+    public func remove() { token?.removeHandler(id) }
+}
+
+/// Runs `expire` once when `deadline` passes. It runs on a Dispatch timer,
+/// not as a Swift task: the generation a deadline bounds is synchronous and
+/// holds a Swift concurrency thread while it runs, and a watchdog task that
+/// sleeps waits behind it, and behind any other blocking work, past the
+/// deadline it enforces. It wakes once, at the deadline, not on a poll.
+/// The timer runs on wall time, as the `Date` deadline does: time that
+/// passes while the Mac sleeps counts, so a deadline that passed during
+/// sleep fires on wake rather than after the remaining budget in awake time.
+public final class GenerationDeadlineTimer: Sendable {
+    /// How late the timer may fire, so the system can coalesce the wake-up.
+    /// Small beside every deadline it enforces.
+    static let leeway: DispatchTimeInterval = .milliseconds(100)
+
+    private let timer: any DispatchSourceTimer
+
+    /// `now` is the clock the deadline is read on. The timer is armed for
+    /// the time `now` says is left; when it fires before `now` reaches the
+    /// deadline (a test clock behind the wall clock), it re-arms for the time
+    /// still left, so it never expires early.
+    public init(
+        deadline: Date,
+        now: @escaping @Sendable () -> Date = { Date() },
+        expire: @escaping @Sendable () -> Void
+    ) {
+        let timer = DispatchSource.makeTimerSource(queue: .global(qos: .userInitiated))
+        self.timer = timer
+        timer.setEventHandler { [weak timer] in
+            let remaining = deadline.timeIntervalSince(now())
+            if remaining > 0 {
+                timer?.schedule(wallDeadline: .now() + remaining, leeway: Self.leeway)
+            } else {
+                timer?.cancel()
+                expire()
+            }
+        }
+        timer.schedule(wallDeadline: .now() + max(0, deadline.timeIntervalSince(now())), leeway: Self.leeway)
+        timer.resume()
+    }
+
+    /// Stops the timer. `expire` does not run after this returns unless a
+    /// wake-up was already in progress when it was called.
+    public func cancel() { timer.cancel() }
+
+    deinit { timer.cancel() }
 }
 
 /// Optional capability for engines that can reuse the model state of a

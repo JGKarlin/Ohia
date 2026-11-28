@@ -79,22 +79,34 @@ enum PDFKitDocumentReader {
     }
 }
 
-/// Stops the service when a PDFKit call runs far past its budget. Deadlines
-/// are checked between pages, but opening a PDF, reading one page's text or
-/// rendering one page cannot be interrupted, and a hostile PDF can make any
-/// of them run forever. Once the caller has stopped waiting, such a call
-/// would only hold a thread and memory, so the service exits instead and
-/// launchd starts a fresh one for the next request.
+/// Stops the service when a PDFKit or Vision call runs far past its budget.
+/// Deadlines are checked between pages, but opening a PDF, reading one page's
+/// text, rendering one page, or decoding an image and recognizing its text
+/// cannot be interrupted, and a hostile file can make any of them run
+/// forever. Such a call would only hold a thread and memory, so the service
+/// answers the request that overran `timedOut` and exits; launchd starts a
+/// fresh service for the next request.
 struct PDFKitWatchdog: Sendable {
     let grace: TimeInterval
+    /// Exits the service, after `overrun` has answered the request.
     let onOverrun: @Sendable () -> Void
 
-    func run<T>(budget: TimeInterval, _ work: () -> T) -> T {
+    /// Runs `work`. When it is still running `grace` (the watchdog's own
+    /// unless given) after `budget`, `overrun` answers the request it serves,
+    /// and then `onOverrun` runs. The work's own reply, should it still come,
+    /// is the caller's to drop.
+    func run<T>(
+        budget: TimeInterval,
+        grace: TimeInterval? = nil,
+        overrun: @escaping @Sendable () -> Void,
+        _ work: () -> T
+    ) -> T {
         let state = WatchdogState()
-        let timer = DispatchWorkItem {
-            if state.markOverrun() { onOverrun() }
+        let timer = ServiceTimer.schedule(after: budget + (grace ?? self.grace)) { [onOverrun] in
+            guard state.markOverrun() else { return }
+            overrun()
+            onOverrun()
         }
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + budget + grace, execute: timer)
         defer {
             state.markFinished()
             timer.cancel()

@@ -1,6 +1,8 @@
 import Foundation
 import FoundationModels
 import ImageIO
+import OhiaCore
+import OhiaPDFParsing
 import Vision
 
 #if canImport(AppKit)
@@ -18,19 +20,15 @@ public struct VisualAttachmentReference: Sendable, Equatable {
         self.filePath = filePath
     }
 
+    /// Whether the declared MIME type and filename make this an image
+    /// (`DocumentKind.image`), the one classification the text and visual
+    /// extraction workers share: a PDF or a document sent with an image MIME
+    /// type is read as what its extension says, by text extraction alone.
+    /// The file path's own extension is not consulted: a stored attachment's
+    /// path is its filename (`CanonicalStore.attachmentPath`).
     public var isImageLike: Bool {
-        let mime = mimeType.lowercased()
-        if mime.hasPrefix("image/") { return true }
-
-        let filenameExtension = (filename as NSString).pathExtension.lowercased()
-        let pathExtension = (filePath as NSString).pathExtension.lowercased()
-        return Self.imageExtensions.contains(filenameExtension)
-            || Self.imageExtensions.contains(pathExtension)
+        DocumentKind.detect(mimeType: mimeType, filename: filename) == .image
     }
-
-    fileprivate static let imageExtensions: Set<String> = [
-        "avif", "bmp", "gif", "heic", "heif", "jpeg", "jpg", "png", "tif", "tiff", "webp"
-    ]
 
     fileprivate static func normalizedImageSubtype(_ mimeType: String) -> String? {
         let normalized = mimeType
@@ -79,15 +77,6 @@ public struct VisualAttachmentEvidence: Codable, Sendable, Equatable {
             self.y = Self.clamped(y)
             self.width = Self.clamped(width)
             self.height = Self.clamped(height)
-        }
-
-        init(_ rect: CGRect) {
-            self.init(
-                x: rect.origin.x,
-                y: rect.origin.y,
-                width: rect.width,
-                height: rect.height
-            )
         }
 
         public static func union(_ boxes: [BoundingBox]) -> BoundingBox? {
@@ -215,6 +204,11 @@ public struct VisualAttachmentEvidence: Codable, Sendable, Equatable {
     public let ocrBlocks: [OCRBlock]
     public let imageMetadata: ImageMetadata
     public let evidenceKind: EvidenceKind
+    /// True when the image's text was not read because text recognition was
+    /// temporarily unavailable, so the evidence has no OCR lines for that
+    /// reason and not because the image has no text. Nil otherwise, and in
+    /// evidence stored before this was recorded, which decodes as it is.
+    public let textRecognitionUnavailable: Bool?
 
     public init(
         filename: String,
@@ -224,7 +218,8 @@ public struct VisualAttachmentEvidence: Codable, Sendable, Equatable {
         ocrLines: [OCRLine],
         ocrBlocks: [OCRBlock] = [],
         imageMetadata: ImageMetadata = ImageMetadata(),
-        evidenceKind: EvidenceKind? = nil
+        evidenceKind: EvidenceKind? = nil,
+        textRecognitionUnavailable: Bool = false
     ) {
         self.filename = filename
         self.mimeType = mimeType
@@ -239,6 +234,7 @@ public struct VisualAttachmentEvidence: Codable, Sendable, Equatable {
             ocrLines: ocrLines,
             ocrBlocks: ocrBlocks
         )
+        self.textRecognitionUnavailable = textRecognitionUnavailable ? true : nil
     }
 
     public var hasSignals: Bool {
@@ -331,38 +327,54 @@ public enum VisualAttachmentEvidenceExtractor {
     public static let maxVisionPixelDimension = 2_400
     public static let maxOCRTextCharacters = 4_000
 
-    public static func extract(from reference: VisualAttachmentReference) throws -> VisualAttachmentEvidence? {
+    /// `recognizeText` reads the image's text in `OhiaPDFParser.xpc`. When
+    /// the text could not be read for now (the service unreachable, timed
+    /// out, or broken twice in a row), the evidence says so
+    /// (`textRecognitionUnavailable`) and is returned even when it has no
+    /// other signal, so the extraction can be tried again later. A process
+    /// with no route (a test runner) does not recognize text at all, as with
+    /// PDFs, which is final. Nil for an image with no signal unless its text
+    /// was left unread for now, and for one ImageIO cannot decode within
+    /// `ImageDecodeBudget.maxDecodedBytes`. Blocks on the service: async
+    /// callers run it through `PDFParserBlockingCall`.
+    public static func extract(
+        from reference: VisualAttachmentReference,
+        recognizeText: ImageTextRecognition.Recognize? = PDFParserRoute.current()?.recognizeText
+    ) throws -> VisualAttachmentEvidence? {
         guard reference.isImageLike else { return nil }
         let data = try Data(contentsOf: URL(fileURLWithPath: reference.filePath), options: .mappedIfSafe)
         return try extract(
             data: data,
             filename: reference.filename,
-            mimeType: reference.mimeType
+            mimeType: reference.mimeType,
+            recognizeText: recognizeText
         )
     }
 
     public static func extract(
         data: Data,
         filename: String,
-        mimeType: String
+        mimeType: String,
+        recognizeText: ImageTextRecognition.Recognize? = PDFParserRoute.current()?.recognizeText
     ) throws -> VisualAttachmentEvidence? {
         guard let image = loadImage(from: data, filename: filename, mimeType: mimeType) else { return nil }
 
         let classifications = imageClassifications(in: image)
         let detectedObjects = objectDetections(in: image)
-        let ocrLines = recognizedText(in: image)
-        let ocrBlocks = groupedOCRBlocks(ocrLines)
+        let text = recognizedText(in: data, using: recognizeText)
+        let ocrBlocks = groupedOCRBlocks(text.lines)
 
         let evidence = VisualAttachmentEvidence(
             filename: filename,
             mimeType: mimeType,
             classifications: classifications,
             detectedObjects: detectedObjects,
-            ocrLines: ocrLines,
+            ocrLines: text.lines,
             ocrBlocks: ocrBlocks,
-            imageMetadata: image.metadata
+            imageMetadata: image.metadata,
+            textRecognitionUnavailable: text.unavailable
         )
-        return evidence.hasSignals ? evidence : nil
+        return evidence.hasSignals || text.unavailable ? evidence : nil
     }
 
     private struct LoadedImage {
@@ -388,31 +400,35 @@ public enum VisualAttachmentEvidenceExtractor {
             }
     }
 
-    private static func recognizedText(in image: LoadedImage) -> [VisualAttachmentEvidence.OCRLine] {
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = true
-        request.automaticallyDetectsLanguage = true
+    /// The image's text, read in `OhiaPDFParser.xpc` from the original bytes
+    /// (the service decodes them itself, honoring their orientation).
+    /// `unavailable` is true when the text was not read for a reason a later
+    /// attempt may not have (`TextRecognitionOutcome.isTransient`). An image
+    /// the service could not decode or read has no lines and is not
+    /// unavailable, and neither is one in a process with no route to the
+    /// service, which never recognizes text.
+    private static func recognizedText(
+        in data: Data,
+        using recognize: ImageTextRecognition.Recognize?
+    ) -> (lines: [VisualAttachmentEvidence.OCRLine], unavailable: Bool) {
+        guard let recognize else { return ([], false) }
+        let reply = ImageTextRecognition.recognize(data, using: recognize)
+        guard reply.outcome == .recognized else { return ([], reply.outcome.isTransient) }
 
-        guard perform(request, on: image) else { return [] }
-
-        let lines = orderedTextObservations(request.results ?? [])
-            .compactMap { observation -> (text: String, confidence: Float, box: VisualAttachmentEvidence.BoundingBox)? in
-                guard let candidate = observation.topCandidates(1).first,
-                      candidate.confidence >= 0.35 else {
-                    return nil
-                }
-                let text = collapsed(candidate.string, limit: 180)
+        let lines = orderedTextLines(reply.lines)
+            .compactMap { line -> (text: String, confidence: Float, box: VisualAttachmentEvidence.BoundingBox)? in
+                guard line.confidence >= 0.35 else { return nil }
+                let text = collapsed(line.text, limit: 180)
                 guard !text.isEmpty else { return nil }
                 return (
                     text: text,
-                    confidence: candidate.confidence,
-                    box: VisualAttachmentEvidence.BoundingBox(observation.boundingBox)
+                    confidence: line.confidence,
+                    box: VisualAttachmentEvidence.BoundingBox(x: line.x, y: line.y, width: line.width, height: line.height)
                 )
             }
             .prefix(36)
 
-        return lines
+        let ocrLines = lines
             .enumerated()
             .map { index, line in
                 return VisualAttachmentEvidence.OCRLine(
@@ -422,6 +438,7 @@ public enum VisualAttachmentEvidenceExtractor {
                     boundingBox: line.box
                 )
             }
+        return (ocrLines, false)
     }
 
     private static func objectDetections(in image: LoadedImage) -> [VisualAttachmentEvidence.DetectedObject] {
@@ -567,36 +584,37 @@ public enum VisualAttachmentEvidenceExtractor {
         return nil
     }
 
+    /// The image Vision's classification and detection read, at 8 bits per
+    /// channel: a copy no larger than `maxVisionPixelDimension`, upright, for
+    /// a larger image, otherwise the image as stored. Nil for an image whose
+    /// whole decode would need more than `ImageDecodeBudget.maxDecodedBytes`,
+    /// checked from its header before a pixel is decoded.
     private static func bestCGImage(from source: CGImageSource) -> CGImage? {
-        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
-        let width = properties?[kCGImagePropertyPixelWidth] as? Int ?? 0
-        let height = properties?[kCGImagePropertyPixelHeight] as? Int ?? 0
-        let needsDownsample = max(width, height) > maxVisionPixelDimension
-
-        if needsDownsample {
-            let options: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: maxVisionPixelDimension
-            ]
-            if let thumbnail = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) {
+        guard let header = ImageDecodeBudget.header(of: source) else { return nil }
+        if max(header.width, header.height) > maxVisionPixelDimension {
+            switch ImageDecodeBudget.thumbnail(of: source, maxPixelSize: maxVisionPixelDimension) {
+            case .image(let thumbnail):
                 return thumbnail
+            case .tooLarge:
+                return nil
+            case .undecodable:
+                break
             }
         }
-
-        return CGImageSourceCreateImageAtIndex(source, 0, nil)
+        guard case .image(let image) = ImageDecodeBudget.image(of: source) else { return nil }
+        return image
     }
 
-    private static func orderedTextObservations(
-        _ observations: [VNRecognizedTextObservation]
-    ) -> [VNRecognizedTextObservation] {
-        observations.sorted { lhs, rhs in
-            let lhsTop = 1 - lhs.boundingBox.maxY
-            let rhsTop = 1 - rhs.boundingBox.maxY
+    /// Top to bottom, then left to right within a row. Vision's boxes have
+    /// their origin at the lower left.
+    private static func orderedTextLines(_ lines: [RecognizedTextLine]) -> [RecognizedTextLine] {
+        lines.sorted { lhs, rhs in
+            let lhsTop = 1 - (lhs.y + lhs.height)
+            let rhsTop = 1 - (rhs.y + rhs.height)
             if abs(lhsTop - rhsTop) > 0.025 {
                 return lhsTop < rhsTop
             }
-            return lhs.boundingBox.minX < rhs.boundingBox.minX
+            return lhs.x < rhs.x
         }
     }
 
@@ -693,8 +711,10 @@ public enum VisualAttachmentEvidenceExtractor {
         let mime = VisualAttachmentReference.normalizedImageSubtype(mimeType)
         guard let mime else { return false }
         let ext = (filename as NSString).pathExtension.lowercased()
+        // Without a MIME type, only an image extension makes the filename an
+        // image.
         guard !ext.isEmpty,
-              VisualAttachmentReference.imageExtensions.contains(ext) else {
+              DocumentKind.detect(mimeType: "", filename: filename) == .image else {
             return false
         }
         return !VisualAttachmentReference.extensions(forImageSubtype: mime).contains(ext)
@@ -741,19 +761,26 @@ public final class AppleFoundationVisualAttachmentSummarizer: @unchecked Sendabl
         if #available(macOS 27.0, *), AppleIntelligenceModelProfile.current().imageAnalysisTier == .multimodal {
             do {
                 if let analysis = try await AppleMultimodalVisualAttachmentAnalyzer().analyze(reference: reference) {
-                    return SummarizationContext.VisualAttachmentSummary(
-                        filename: reference.filename, summary: analysis.semanticText
-                    )
+                    if analysis.hasSignals {
+                        return SummarizationContext.VisualAttachmentSummary(
+                            filename: reference.filename, summary: analysis.semanticText
+                        )
+                    }
+                    // No signal only because the image's text could not be
+                    // read for now. The legacy path below would ask the same
+                    // service again, up to two more full waits; this is the
+                    // answer until a later attempt.
+                    if analysis.textRecognitionUnavailable == true { return nil }
                 }
             } catch MultimodalVisualAttachmentError.unsupportedCapability {
                 // Retain Vision OCR when runtime capabilities change.
             }
         }
 #endif
-        let evidenceTask = Task.detached(priority: .utility) { () throws -> VisualAttachmentEvidence? in
+        let evidence = try await PDFParserBlockingCall.run(priority: .utility) { () throws -> VisualAttachmentEvidence? in
             try VisualAttachmentEvidenceExtractor.extract(from: reference)
         }
-        guard let evidence = try await evidenceTask.value else {
+        guard let evidence else {
             return nil
         }
         return try await summarize(evidence: evidence)
@@ -1061,6 +1088,8 @@ enum VisualAttachmentSummaryPromptBuilder {
                 .map {
                     "- \(quoted($0.text, limit: 600))"
                 }
+        } else if evidence.ocrLines.isEmpty, evidence.textRecognitionUnavailable == true {
+            sections.append("Visible text: unknown; it was not read. Do not describe or guess the image's text.")
         } else if evidence.ocrLines.isEmpty {
             sections.append("Visible text: none.")
         } else {

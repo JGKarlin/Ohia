@@ -864,6 +864,8 @@ struct AnnotationItemFactory {
                 return "No usable text or visual detail was found in this image."
             case .blocked, .failed, .stalled:
                 return status.badge?.help ?? "Image description unavailable."
+            case .willRetry:
+                return status.badge?.help ?? ""
             case .queued(.document), .encrypted, .mailDrop:
                 return status.badge?.help ?? "Image description unavailable."
             }

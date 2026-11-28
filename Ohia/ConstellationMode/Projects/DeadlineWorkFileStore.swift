@@ -1,6 +1,7 @@
 import Foundation
 import OhiaCore
 import OhiaIngest
+import OhiaPDFParsing
 
 /// One file the account owner is preparing for a deadline — dropped onto the
 /// guide pane's FILES section and copied into the deadline's own folder.
@@ -155,7 +156,10 @@ struct DeadlineWorkFileStore: Sendable {
     /// the parse off the calling executor. Returns `nil` when the file's type
     /// or content yields no text; that outcome is cached too — image OCR is
     /// expensive, and re-attempting it on every pane visit would burn CPU for
-    /// the same answer. Removing and re-adding the file retries.
+    /// the same answer. Removing and re-adding the file retries. A PDF or an
+    /// image waits on `OhiaPDFParser.xpc`, so the parse runs off Swift's task
+    /// threads (`PDFParserBlockingCall`); a read the caller cancelled is not
+    /// cached.
     func extractedText(for file: DeadlineWorkFile) async -> String? {
         let sidecar = sidecarURL(for: file)
         if let cached = try? String(contentsOf: sidecar, encoding: .utf8) {
@@ -163,10 +167,12 @@ struct DeadlineWorkFileStore: Sendable {
         }
         let fileURL = file.url
         let filename = file.filename
-        let text = await Task.detached(priority: .utility) { () -> String? in
+        let maxBytes = Self.maxExtractionBytes
+        let maxCharacters = Self.maxExtractedCharacters
+        let text = await PDFParserBlockingCall.run(priority: .utility) { () -> String? in
             guard let sizeValues = try? fileURL.resourceValues(forKeys: [.fileSizeKey]),
                   let size = sizeValues.fileSize,
-                  size <= Self.maxExtractionBytes else {
+                  size <= maxBytes else {
                 return nil
             }
             guard let data = try? Data(contentsOf: fileURL, options: .mappedIfSafe) else { return nil }
@@ -177,8 +183,9 @@ struct DeadlineWorkFileStore: Sendable {
                 policy: .full
             )
             guard let extracted, extracted.isEmpty == false else { return nil }
-            return String(extracted.prefix(Self.maxExtractedCharacters))
-        }.value
+            return String(extracted.prefix(maxCharacters))
+        }
+        if Task.isCancelled { return text }
         let folder = sidecar.deletingLastPathComponent()
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         try? (text ?? "").write(to: sidecar, atomically: true, encoding: .utf8)

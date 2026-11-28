@@ -1,5 +1,6 @@
 import Foundation
 import ImageIO
+import OhiaPDFParsing
 
 public enum RemoteMediaFetchError: Error, Equatable, Sendable {
     /// The link no longer serves the file (expired, removed, forbidden).
@@ -199,6 +200,7 @@ public enum RemoteImageHeaderReader {
         let options = [kCGImageSourceShouldCache: false] as CFDictionary
         guard !response.data.isEmpty,
               let source = CGImageSourceCreateWithData(response.data as CFData, options),
+              ImageDecodeBudget.isRasterImage(source),
               CGImageSourceGetCount(source) > 0,
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, options) as? [CFString: Any] else {
             throw RemoteMediaFetchError.unsupported("Not a readable image")

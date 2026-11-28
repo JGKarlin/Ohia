@@ -1,5 +1,6 @@
 import Foundation
 import OhiaCore
+import OhiaIngest
 
 public enum VisualAttachmentExtractionStatus: String, Codable, Sendable, Equatable {
     case completed
@@ -40,6 +41,17 @@ public struct VisualAttachmentExtractionResult: Sendable, Equatable {
     public let objectCount: Int?
     public let failureReason: String?
     public let generatedAt: Date?
+    /// The image's text was not read because text recognition was
+    /// temporarily unavailable (`TextRecognitionOutcome.isTransient`), not
+    /// because the image has none: the extraction is tried again later
+    /// (`Attachment.applyVisualExtractionResult`). Everything else the
+    /// extraction found is kept.
+    public let textRecognitionUnavailable: Bool
+
+    /// What an extraction whose text recognition was unavailable says in
+    /// `failureReason` when it otherwise completed.
+    public static let textRecognitionUnavailableReason =
+        "The image's text was not read: text recognition was unavailable"
 
     public init(
         status: VisualAttachmentExtractionStatus,
@@ -64,7 +76,8 @@ public struct VisualAttachmentExtractionResult: Sendable, Equatable {
         classificationCount: Int? = nil,
         objectCount: Int? = nil,
         failureReason: String? = nil,
-        generatedAt: Date? = Date()
+        generatedAt: Date? = Date(),
+        textRecognitionUnavailable: Bool = false
     ) {
         self.status = status
         self.method = method
@@ -90,6 +103,7 @@ public struct VisualAttachmentExtractionResult: Sendable, Equatable {
         self.objectCount = objectCount
         self.failureReason = failureReason
         self.generatedAt = generatedAt
+        self.textRecognitionUnavailable = textRecognitionUnavailable
     }
 
     public var hasVisualSummary: Bool {
@@ -126,7 +140,8 @@ public struct VisualAttachmentExtractionResult: Sendable, Equatable {
             classificationCount: classificationCount,
             objectCount: objectCount,
             failureReason: failureReason,
-            generatedAt: generatedAt
+            generatedAt: generatedAt,
+            textRecognitionUnavailable: textRecognitionUnavailable
         )
     }
 
@@ -159,7 +174,8 @@ public struct VisualAttachmentExtractionResult: Sendable, Equatable {
             classificationCount: classificationCount,
             objectCount: objectCount,
             failureReason: failureReason,
-            generatedAt: generatedAt
+            generatedAt: generatedAt,
+            textRecognitionUnavailable: textRecognitionUnavailable
         )
     }
 
@@ -192,7 +208,8 @@ public struct VisualAttachmentExtractionResult: Sendable, Equatable {
         objectCount: Int? = nil,
         method: VisualAttachmentExtractionMethod = .appleVisionFoundationModelsLegacy,
         parserVersion: String = AppleIntelligenceModelProfile.legacyParserVersion,
-        generatedAt: Date = Date()
+        generatedAt: Date = Date(),
+        textRecognitionUnavailable: Bool = false
     ) -> VisualAttachmentExtractionResult {
         VisualAttachmentExtractionResult(
             status: .completed,
@@ -216,7 +233,9 @@ public struct VisualAttachmentExtractionResult: Sendable, Equatable {
             ocrCharacterCount: ocrCharacterCount,
             classificationCount: classificationCount,
             objectCount: objectCount,
-            generatedAt: generatedAt
+            failureReason: textRecognitionUnavailable ? textRecognitionUnavailableReason : nil,
+            generatedAt: generatedAt,
+            textRecognitionUnavailable: textRecognitionUnavailable
         )
     }
 
@@ -249,7 +268,8 @@ public struct VisualAttachmentExtractionResult: Sendable, Equatable {
             objectCount: evidence.detectedObjects.reduce(0) { $0 + $1.count },
             method: method,
             parserVersion: parserVersion,
-            generatedAt: generatedAt
+            generatedAt: generatedAt,
+            textRecognitionUnavailable: evidence.textRecognitionUnavailable == true
         )
     }
 
@@ -282,7 +302,8 @@ public struct VisualAttachmentExtractionResult: Sendable, Equatable {
             objectCount: evidence?.detectedObjects.reduce(0) { $0 + $1.count },
             method: method,
             parserVersion: parserVersion,
-            generatedAt: generatedAt
+            generatedAt: generatedAt,
+            textRecognitionUnavailable: analysis.textRecognitionUnavailable == true
         )
     }
 
@@ -291,14 +312,16 @@ public struct VisualAttachmentExtractionResult: Sendable, Equatable {
         method: VisualAttachmentExtractionMethod? = .appleVisionFoundationModelsLegacy,
         failureReason: String? = nil,
         parserVersion: String? = AppleIntelligenceModelProfile.legacyParserVersion,
-        generatedAt: Date = Date()
+        generatedAt: Date = Date(),
+        textRecognitionUnavailable: Bool = false
     ) -> VisualAttachmentExtractionResult {
         VisualAttachmentExtractionResult(
             status: status,
             method: method,
             parserVersion: parserVersion,
             failureReason: failureReason,
-            generatedAt: generatedAt
+            generatedAt: generatedAt,
+            textRecognitionUnavailable: textRecognitionUnavailable
         )
     }
 }
@@ -315,7 +338,22 @@ public extension AppleIntelligenceModelProfile {
 }
 
 public extension Attachment {
-    func applyVisualExtractionResult(_ result: VisualAttachmentExtractionResult) {
+    /// Stores one visual extraction, and schedules the next with
+    /// `AttachmentExtractionRetryPolicy` when its image text could not be read
+    /// for now (`textRecognitionUnavailable`): `visualExtractionNextRetryAt`,
+    /// at most three extractions per parser version. Any other result clears
+    /// the schedule.
+    func applyVisualExtractionResult(_ result: VisualAttachmentExtractionResult, attemptedAt: Date = Date()) {
+        let previousAttempts = visualExtractionParserVersion == result.parserVersion
+            ? visualExtractionAttemptCount ?? 0
+            : 0
+        let next = AttachmentExtractionRetryPolicy.schedule(
+            previousAttempts: previousAttempts,
+            retryable: result.textRecognitionUnavailable,
+            attemptedAt: attemptedAt
+        )
+        visualExtractionAttemptCount = next.attempts
+        visualExtractionNextRetryAt = next.nextRetryAt
         visualExtractionStatus = result.status.rawValue
         visualExtractionMethod = result.method?.rawValue
         visualExtractionFailureReason = result.failureReason

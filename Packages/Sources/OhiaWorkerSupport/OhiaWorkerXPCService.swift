@@ -528,8 +528,9 @@ private final class OhiaWorkerXPCService: NSObject,
                 }
                 if let workerConnection {
                     // PDFs this worker reads (mail attachments, Composer
-                    // sources) are parsed and rendered in the app's sandboxed
-                    // PDF parser service, never in this process.
+                    // sources) are parsed and rendered, and images' text is
+                    // recognized, in the app's sandboxed PDF parser service,
+                    // never in this process.
                     let pdfParser = WorkerPDFParserClient(connection: workerConnection)
                     PDFParserRoute.installBrokered(PDFParserRoute.Service(
                         parse: { pdf, maxPages in
@@ -537,6 +538,9 @@ private final class OhiaWorkerXPCService: NSObject,
                         },
                         renderPages: { pdf, maxPages, maxPixelSize in
                             pdfParser.renderPages(pdf, maxPages: maxPages, maxPixelSize: maxPixelSize)
+                        },
+                        recognizeText: { image in
+                            pdfParser.recognizeText(image)
                         }
                     ))
                 }

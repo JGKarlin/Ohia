@@ -103,10 +103,9 @@ public enum ReplyPreparationInputReadiness {
             // Mail Drop rows hold no local bytes: there is no text or visual
             // extraction to wait for, only their capture metadata.
             if attachment.remoteURL != nil { continue }
-            switch DocumentKind.detect(
-                mimeType: attachment.mimeType,
-                filename: attachment.filename
-            ) {
+            // The stored kind, which decides which extraction worker reads
+            // the attachment.
+            switch attachment.declaredKind {
             case .image:
                 if visualExtractionIsTerminal(attachment) == false {
                     blockers.insert(.pendingVisualExtraction)

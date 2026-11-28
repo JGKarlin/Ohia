@@ -83,6 +83,14 @@ public protocol WorkerXPCCommandBrokerProtocol {
         maxPixelSize: Int,
         withReply reply: @escaping @Sendable (Data?, Int) -> Void
     )
+
+    /// Recognizes the text in one image in the app's sandboxed
+    /// `OhiaPDFParser.xpc`. The reply carries the same fields as
+    /// `PDFParserXPCProtocol.recognizeText`.
+    func recognizeImageText(
+        _ image: Data,
+        withReply reply: @escaping @Sendable (Data?, Int, String?) -> Void
+    )
 }
 
 public enum WorkerXPCPayloadCodec {
@@ -390,6 +398,12 @@ public final class WorkerXPCCommandBroker: NSObject,
         @escaping @Sendable (PDFRenderReply) -> Void
     ) -> Void
 
+    public typealias TextRecognitionResolver = @Sendable (
+        Data,
+        WorkerRole,
+        @escaping @Sendable (TextRecognitionReply) -> Void
+    ) -> Void
+
     /// The app's resolver: relays each worker PDF to `OhiaPDFParser.xpc`,
     /// in the lane that matches the work the requesting worker does.
     public static let appPDFParseResolver: PDFParseResolver = { pdf, maxPages, role, reply in
@@ -407,6 +421,11 @@ public final class WorkerXPCCommandBroker: NSObject,
         )
     }
 
+    /// The app's resolver for image text recognition, in the same lanes.
+    public static let appTextRecognitionResolver: TextRecognitionResolver = { image, role, reply in
+        PDFParserRelay.shared.recognizeText(image, lane: relayLane(for: role), reply: reply)
+    }
+
     /// The retrieval worker extracts mail attachments in the background; the
     /// generative worker parses the Composer sources the user is waiting on.
     static func relayLane(for role: WorkerRole) -> PDFParserRelay.Lane {
@@ -422,6 +441,7 @@ public final class WorkerXPCCommandBroker: NSObject,
     private let mailCredentialResolver: MailCredentialResolver
     private let pdfParseResolver: PDFParseResolver
     private let pdfRenderResolver: PDFRenderResolver
+    private let textRecognitionResolver: TextRecognitionResolver
 
     public init(
         sourceRole: WorkerRole,
@@ -447,6 +467,9 @@ public final class WorkerXPCCommandBroker: NSObject,
         },
         pdfRenderResolver: @escaping PDFRenderResolver = { _, _, _, _, reply in
             reply(PDFRenderReply(outcome: .serviceUnavailable))
+        },
+        textRecognitionResolver: @escaping TextRecognitionResolver = { _, _, reply in
+            reply(TextRecognitionReply(outcome: .serviceUnavailable))
         }
     ) {
         self.sourceRole = sourceRole
@@ -455,6 +478,7 @@ public final class WorkerXPCCommandBroker: NSObject,
         self.mailCredentialResolver = mailCredentialResolver
         self.pdfParseResolver = pdfParseResolver
         self.pdfRenderResolver = pdfRenderResolver
+        self.textRecognitionResolver = textRecognitionResolver
         super.init()
     }
 
@@ -526,6 +550,17 @@ public final class WorkerXPCCommandBroker: NSObject,
     ) {
         pdfRenderResolver(pdf, maxPages, maxPixelSize, sourceRole) { result in
             reply(result.wireOutput, result.outcome.rawValue)
+        }
+    }
+
+    /// Both workers read the text in images (mail attachments, Composer
+    /// sources), which is recognized only in the sandboxed service.
+    public func recognizeImageText(
+        _ image: Data,
+        withReply reply: @escaping @Sendable (Data?, Int, String?) -> Void
+    ) {
+        textRecognitionResolver(image, sourceRole) { result in
+            reply(result.wireOutput, result.outcome.rawValue, result.detail)
         }
     }
 

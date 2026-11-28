@@ -124,12 +124,13 @@ struct ProjectsHoverPopup: View {
         .accessibilityElement(children: expanded && expandedMode == .message ? .contain : .combine)
         .accessibilityLabel(popupAccessibilityLabel)
         .task(id: imageLoadKey) {
-            guard let path = imageLoadKey,
-                  FileManager.default.fileExists(atPath: path) else {
+            guard let path = imageLoadKey else {
                 cachedImage = nil
                 return
             }
-            cachedImage = NSImage(contentsOfFile: path)
+            let image = await AttachmentPreviewImage.load(path: path)
+            guard !Task.isCancelled else { return }
+            cachedImage = image
         }
     }
 

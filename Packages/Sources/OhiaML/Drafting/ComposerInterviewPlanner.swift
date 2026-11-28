@@ -371,15 +371,7 @@ public final class ComposerInterviewPlanner: Sendable {
         let activityToken = modelActivityStatusPublisher?.begin(.questioning, source: "composer-incoming-reading")
         defer { if let activityToken { modelActivityStatusPublisher?.end(activityToken) } }
         let action = ComposerGenerationAction(timeout: min(timeout, Self.maximumReadingSeconds))
-        let watchdog = Task.detached {
-            while !Task.isCancelled {
-                if cancellation?.isCancelled == true || action.remainingSeconds <= 0 {
-                    action.cancel()
-                    return
-                }
-                try await Task.sleep(for: .seconds(min(0.05, max(0.01, action.remainingSeconds))))
-            }
-        }
+        let watchdog = ComposerActionWatchdog(action: action, caller: cancellation)
         defer { watchdog.cancel() }
         do {
             func read(_ prompt: PrefixCachedPrompt, sentences count: Int) throws -> GenerationPayload {
@@ -477,15 +469,7 @@ public final class ComposerInterviewPlanner: Sendable {
         // cancelling the caller's other work. Both local MLX and worker engines
         // observe it during generation.
         let action = ComposerGenerationAction(timeout: timeout)
-        let watchdog = Task.detached {
-            while !Task.isCancelled {
-                if cancellation?.isCancelled == true || action.remainingSeconds <= 0 {
-                    action.cancel()
-                    return
-                }
-                try await Task.sleep(for: .seconds(min(0.05, action.remainingSeconds)))
-            }
-        }
+        let watchdog = ComposerActionWatchdog(action: action, caller: cancellation)
         defer { watchdog.cancel() }
 
         func checkPreparation() throws {
@@ -677,7 +661,7 @@ public final class ComposerInterviewPlanner: Sendable {
             let failure: Error
             if Task.isCancelled || cancellation?.isCancelled == true {
                 failure = CancellationError()
-            } else if Date() >= action.deadline {
+            } else if action.isPastDeadline {
                 failure = ComposerContentError.deadlineExceeded
             } else {
                 failure = error

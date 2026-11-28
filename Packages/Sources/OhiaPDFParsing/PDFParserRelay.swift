@@ -1,14 +1,15 @@
 import Foundation
 
-/// Runs worker-requested PDF parses and page renders in the app, where
-/// `OhiaPDFParser.xpc` can be reached. Worker XPC services cannot embed or
-/// look up the service themselves, so they send the PDF to the app over their
-/// existing broker connection and the app relays it here.
+/// Runs worker-requested PDF parses, page renders and image text recognition
+/// in the app, where `OhiaPDFParser.xpc` can be reached. Worker XPC services
+/// cannot embed or look up the service themselves, so they send the PDF or
+/// image to the app over their existing broker connection and the app relays
+/// it here.
 ///
-/// Each lane handles one PDF at a time, so bulk extraction never launches a
+/// Each lane handles one file at a time, so bulk extraction never launches a
 /// Node process per queued PDF. The two lanes are independent: the
 /// generative worker's Composer sources, which the user is waiting on, never
-/// queue behind the retrieval worker's background extraction. PDFs the app
+/// queue behind the retrieval worker's background extraction. Files the app
 /// reads for itself use `PDFParserXPCClient` directly and skip both lanes.
 public final class PDFParserRelay: Sendable {
     public enum Lane: Sendable {
@@ -26,6 +27,7 @@ public final class PDFParserRelay: Sendable {
 
     private let request: Request
     private let render: RenderRequest
+    private let recognize: ImageTextRecognition.Recognize
     private let maxQueueWait: TimeInterval
     private let backgroundQueue = DispatchQueue(label: "org.jgkarlin.Ohia.PDFParserRelay.background", qos: .utility)
     private let interactiveQueue = DispatchQueue(label: "org.jgkarlin.Ohia.PDFParserRelay.interactive", qos: .userInitiated)
@@ -36,6 +38,9 @@ public final class PDFParserRelay: Sendable {
             render: { pdf, maxPages, maxPixelSize in
                 client.renderPages(pdf, maxPages: maxPages, maxPixelSize: maxPixelSize)
             },
+            recognize: { image in
+                client.recognizeText(image)
+            },
             request: { pdf, maxPages in
                 client.parse(pdf, maxPages: maxPages)
             }
@@ -45,10 +50,12 @@ public final class PDFParserRelay: Sendable {
     init(
         maxQueueWait: TimeInterval,
         render: @escaping RenderRequest = { _, _, _ in PDFRenderReply(outcome: .serviceUnavailable) },
+        recognize: @escaping ImageTextRecognition.Recognize = { _ in TextRecognitionReply(outcome: .serviceUnavailable) },
         request: @escaping Request
     ) {
         self.maxQueueWait = maxQueueWait
         self.render = render
+        self.recognize = recognize
         self.request = request
     }
 
@@ -92,8 +99,26 @@ public final class PDFParserRelay: Sendable {
         }
     }
 
-    private static func isAcceptable(_ pdf: Data) -> Bool {
-        !pdf.isEmpty && pdf.count <= PDFParserLimits.maxInputBytes
+    /// Recognizes an image's text in the same lanes as PDFs, with the same
+    /// refusals.
+    public func recognizeText(
+        _ image: Data,
+        lane: Lane,
+        reply: @escaping @Sendable (TextRecognitionReply) -> Void
+    ) {
+        guard Self.isAcceptable(image) else {
+            reply(TextRecognitionReply(outcome: .invalidRequest))
+            return
+        }
+        enqueue(on: lane) { [recognize] in
+            reply(recognize(image))
+        } expired: {
+            reply(TextRecognitionReply(outcome: .timedOut))
+        }
+    }
+
+    private static func isAcceptable(_ file: Data) -> Bool {
+        !file.isEmpty && file.count <= PDFParserLimits.maxInputBytes
     }
 
     private func enqueue(

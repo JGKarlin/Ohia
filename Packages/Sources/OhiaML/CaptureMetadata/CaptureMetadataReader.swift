@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import ImageIO
+import OhiaPDFParsing
 
 /// What a media file records about its capture. `unzonedCaptureInstant` is
 /// an absolute capture instant with no local time zone (an MP4 `mvhd` time or
@@ -24,9 +25,13 @@ public enum CaptureMetadataReader {
 
     // MARK: Images
 
+    /// Nil for a file ImageIO does not read as a raster image: a PDF named
+    /// like a photo is refused by its type before ImageIO opens it
+    /// (`ImageDecodeBudget.isRasterImage`).
     public static func readImage(at url: URL) -> CaptureMetadataReading? {
         let options = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithURL(url as CFURL, options),
+              ImageDecodeBudget.isRasterImage(source),
               CGImageSourceGetCount(source) > 0,
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, options) as? [CFString: Any] else {
             return nil

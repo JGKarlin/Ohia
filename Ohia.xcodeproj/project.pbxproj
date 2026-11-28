@@ -14,6 +14,7 @@
 		8C3D61782F8FA18B00C04BE1 /* OhiaScheduler in Frameworks */ = {isa = PBXBuildFile; productRef = 8C3D61772F8FA18B00C04BE1 /* OhiaScheduler */; };
 		8C3D617A2F8FA18B00C04BE1 /* OhiaMessagesReaderProtocol in Frameworks */ = {isa = PBXBuildFile; productRef = 8C3D61792F8FA18B00C04BE1 /* OhiaMessagesReaderProtocol */; };
 		8C3D61C22F9A000000C04BE1 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 8C3D61C12F9A000000C04BE1 /* Sparkle */; };
+		8C3D61C42F9B000000C04BE1 /* OhiaPDFParsing in Frameworks */ = {isa = PBXBuildFile; productRef = 8C3D61C32F9B000000C04BE1 /* OhiaPDFParsing */; };
 		8CB0000C2FB0000000B0000C /* OhiaUninstallKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8CB0000D2FB0000000B0000D /* OhiaUninstallKit */; };
 		8CB0000F2FB0000000B0000F /* Uninstall Ohia.app in Embed Uninstaller */ = {isa = PBXBuildFile; fileRef = 8CB000012FB0000000B00001 /* Uninstall Ohia.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
@@ -95,6 +96,7 @@
 				8C3D61B02F8FA18B00C04BE1 /* OhiaUninstallKit in Frameworks */,
 				8C3D617A2F8FA18B00C04BE1 /* OhiaMessagesReaderProtocol in Frameworks */,
 				8C3D61C22F9A000000C04BE1 /* Sparkle in Frameworks */,
+				8C3D61C42F9B000000C04BE1 /* OhiaPDFParsing in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -168,6 +170,7 @@
 				8C3D61772F8FA18B00C04BE1 /* OhiaScheduler */,
 				8C3D61792F8FA18B00C04BE1 /* OhiaMessagesReaderProtocol */,
 				8C3D61C12F9A000000C04BE1 /* Sparkle */,
+				8C3D61C32F9B000000C04BE1 /* OhiaPDFParsing */,
 			);
 			productName = Ohia;
 			productReference = 8C9136612F8F9D9300CD3696 /* Ohia.app */;
@@ -576,7 +579,7 @@
 				CODE_SIGN_ENTITLEMENTS = Ohia/Ohia.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 3T72U4Q7A5;
 				ENABLE_APP_SANDBOX = YES;
@@ -589,7 +592,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.11.0;
+				MARKETING_VERSION = 0.12.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.jgkarlin.Ohia;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -613,7 +616,7 @@
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 3T72U4Q7A5;
 				ENABLE_APP_SANDBOX = YES;
@@ -626,7 +629,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 0.11.0;
+				MARKETING_VERSION = 0.12.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.jgkarlin.Ohia;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
@@ -647,7 +650,7 @@
 				CODE_SIGN_ENTITLEMENTS = OhiaUninstaller/OhiaUninstaller.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 3T72U4Q7A5;
 				ENABLE_APP_SANDBOX = NO;
@@ -660,7 +663,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.4;
-				MARKETING_VERSION = 0.11.0;
+				MARKETING_VERSION = 0.12.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.jgkarlin.Ohia.Uninstaller;
 				PRODUCT_NAME = "Uninstall Ohia";
 				SKIP_INSTALL = YES;
@@ -681,7 +684,7 @@
 				CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO;
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEAD_CODE_STRIPPING = YES;
 				DEVELOPMENT_TEAM = 3T72U4Q7A5;
 				ENABLE_APP_SANDBOX = NO;
@@ -694,7 +697,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.4;
-				MARKETING_VERSION = 0.11.0;
+				MARKETING_VERSION = 0.12.0;
 				PRODUCT_BUNDLE_IDENTIFIER = org.jgkarlin.Ohia.Uninstaller;
 				PRODUCT_NAME = "Uninstall Ohia";
 				SKIP_INSTALL = YES;
@@ -796,6 +799,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8C3D616F2F8FA11F00C04BE1 /* XCLocalSwiftPackageReference "Packages" */;
 			productName = OhiaUninstallKit;
+		};
+		8C3D61C32F9B000000C04BE1 /* OhiaPDFParsing */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 8C3D616F2F8FA11F00C04BE1 /* XCLocalSwiftPackageReference "Packages" */;
+			productName = OhiaPDFParsing;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

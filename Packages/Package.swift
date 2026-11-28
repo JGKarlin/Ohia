@@ -13,6 +13,9 @@ let package = Package(
         .library(name: "OhiaMail", targets: ["OhiaMail"]),
         .library(name: "OhiaUninstallKit", targets: ["OhiaUninstallKit"]),
         .library(name: "OhiaMessagesReaderProtocol", targets: ["OhiaMessagesReaderProtocol"]),
+        // The parser service's contract and its clients (the route, the XPC
+        // client, the image decode budget), which the app imports directly.
+        .library(name: "OhiaPDFParsing", targets: ["OhiaPDFParsing"]),
         .executable(name: "OhiaMessagesReader", targets: ["OhiaMessagesReader"]),
         .executable(name: "OhiaPDFParser", targets: ["OhiaPDFParser"]),
         .executable(name: "OhiaRetrievalWorker", targets: ["OhiaRetrievalWorker"]),
@@ -101,7 +104,7 @@ let package = Package(
         ),
         .target(
             name: "OhiaScheduler",
-            dependencies: ["OhiaCore", "OhiaIngest", "OhiaML", "OhiaMail"]
+            dependencies: ["OhiaCore", "OhiaIngest", "OhiaML", "OhiaMail", "OhiaPDFParsing"]
         ),
         .target(
             name: "OhiaWorkerSupport",

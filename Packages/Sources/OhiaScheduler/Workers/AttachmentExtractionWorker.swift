@@ -6,7 +6,8 @@ import OhiaML
 
 /// Drains the deferred-extraction backlog left behind by the bounded first-run
 /// ingest tier. For each message that still has at least one text-bearing
-/// attachment without `extractedTextPath`, runs `AttachmentExtractor.extractText`
+/// attachment without `extractedTextPath`, or whose extraction retry is due
+/// (`AttachmentExtractionRetryPolicy`), runs `MultimodalAttachmentExtractor`
 /// with the full policy, persists the result via `CanonicalStore`, then deletes
 /// the message's existing vectors and flips `embeddingStatus = .pending` so the
 /// standard `.embed` pass re-embeds the body, entities, and the newly-extracted
@@ -94,17 +95,69 @@ public final class AttachmentExtractionWorker: @unchecked Sendable {
         )
     }
 
-    /// True when at least one `Attachment` row still has no `extractedTextPath`
-    /// and still needs a full extraction attempt.
+    /// True when at least one `Attachment` row still needs a full extraction
+    /// attempt: one without `extractedTextPath`, or one whose retry is due
+    /// (`AttachmentExtractionRetryPolicy`), which may have text from an
+    /// attempt whose text recognition was unavailable. Also true while rows
+    /// from before `Attachment.declaredDocumentKind` remain unclassified:
+    /// any of them may be one.
     @MainActor
     public static func hasPendingWork(context: ModelContext) -> Bool {
-        let descriptor = FetchDescriptor<Attachment>(
-            predicate: #Predicate<Attachment> { attachment in
-                attachment.extractedTextPath == nil
-            }
-        )
-        let rows = (try? context.fetch(descriptor)) ?? []
-        return rows.contains(where: isPendingExtractionCandidate)
+        let candidates: PendingCandidates
+        do {
+            candidates = try fetchPendingCandidates(context: context)
+        } catch {
+            print("[Ohia] attachment extraction pending check failed errorKind=\(String(reflecting: type(of: error)))")
+            return false
+        }
+        return candidates.unclassifiedRemain || candidates.rows.contains(where: isPendingExtractionCandidate)
+    }
+
+    /// The store's side of `isPendingExtractionCandidate`, by columns only:
+    /// a retry scheduled for an attachment whose stored kind bears text, or
+    /// a document (neither an image nor unsupported) never extracted. Images,
+    /// which the visual extraction worker reads, and unsupported attachments
+    /// stay in the store. The store's `!=` follows SQL and does not match a
+    /// missing kind: a row from before `Attachment.declaredDocumentKind` is
+    /// fetched once `Attachment.classifyUnclassified` has stored its kind,
+    /// which `fetchPendingCandidates` runs first. The predicate admits every
+    /// classified row `isPendingExtractionCandidate` picks.
+    static var pendingCandidates: Predicate<Attachment> {
+        typealias Store = AttachmentStorePredicate
+        let image = DocumentKind.image.rawValue
+        let unsupported = DocumentKind.unsupported.rawValue
+        return Predicate<Attachment> { row in
+            Store.any(
+                Store.all(
+                    Store.column(row, \.extractionNextRetryAt, isNot: nil),
+                    Store.column(row, \.declaredDocumentKind, isNot: unsupported)
+                ),
+                Store.all(
+                    Store.column(row, \.extractedTextPath, is: nil),
+                    Store.column(row, \.extractionStatus, is: nil),
+                    Store.column(row, \.extractionMethod, is: nil),
+                    Store.column(row, \.declaredDocumentKind, isNot: image),
+                    Store.column(row, \.declaredDocumentKind, isNot: unsupported)
+                )
+            )
+        }
+    }
+
+    private struct PendingCandidates {
+        let rows: [Attachment]
+        /// Rows from before `Attachment.declaredDocumentKind` remain
+        /// unclassified, outside the fetch until a later batch.
+        let unclassifiedRemain: Bool
+    }
+
+    /// The rows the store returns for `pendingCandidates`, after a batch of
+    /// rows without a stored kind is classified and saved
+    /// (`Attachment.classifyUnclassified`).
+    @MainActor
+    private static func fetchPendingCandidates(context: ModelContext) throws -> PendingCandidates {
+        let unclassifiedRemain = try Attachment.classifyUnclassified(in: context)
+        let rows = try context.fetch(FetchDescriptor<Attachment>(predicate: pendingCandidates))
+        return PendingCandidates(rows: rows, unclassifiedRemain: unclassifiedRemain)
     }
 
     // MARK: - Internals
@@ -146,12 +199,7 @@ public final class AttachmentExtractionWorker: @unchecked Sendable {
         // Newest first — recent mail is more likely to be looked at while the
         // backlog drains, so the orientation paragraph fills in for visible
         // messages first.
-        let descriptor = FetchDescriptor<Attachment>(
-            predicate: #Predicate<Attachment> { attachment in
-                attachment.extractedTextPath == nil
-            }
-        )
-        let pending = try context.fetch(descriptor).filter(Self.isPendingExtractionCandidate)
+        let pending = try Self.fetchPendingCandidates(context: context).rows.filter(Self.isPendingExtractionCandidate)
         var seen = Set<UUID>()
         var ordered: [Message] = []
         for attachment in pending {
@@ -181,14 +229,13 @@ public final class AttachmentExtractionWorker: @unchecked Sendable {
         let messageID = message.id.uuidString
         var extracted = 0
         var markedUnsupported = 0
+        // Saved with the message's results below.
+        Attachment.classifyDeclaredKinds(message.attachments)
 
         for attachment in message.attachments {
             guard Self.isPendingExtractionCandidate(attachment) else { continue }
 
-            let kind = DocumentKind.detect(
-                mimeType: attachment.mimeType,
-                filename: attachment.filename
-            )
+            let kind = attachment.declaredKind
             guard let filePath = attachment.filePath,
                   FileManager.default.fileExists(atPath: filePath) else {
                 let failure = AttachmentExtractionResult.failure(
@@ -197,9 +244,12 @@ public final class AttachmentExtractionWorker: @unchecked Sendable {
                     method: kind.defaultMethod,
                     failureReason: "Attachment file is missing"
                 )
-                attachment.applyExtractionResult(failure)
+                // A retry of an attempt that stored text keeps that text.
+                if attachment.extractedTextPath == nil {
+                    attachment.applyExtractionResult(failure)
+                    attachment.clearAttachmentSummary()
+                }
                 AttachmentExtractionRetryPolicy.recordAttempt(attachment: attachment, result: failure)
-                attachment.clearAttachmentSummary()
                 markedUnsupported += 1
                 continue
             }
@@ -247,6 +297,21 @@ public final class AttachmentExtractionWorker: @unchecked Sendable {
             }
             try Task.checkCancellation()
 
+            // A retry of an attempt that stored text while text recognition
+            // was unavailable keeps that text unless this attempt read some:
+            // only the schedule moves on.
+            if attachment.extractedTextPath != nil, result?.hasExtractedText != true {
+                AttachmentExtractionRetryPolicy.recordAttempt(
+                    attachment: attachment,
+                    result: result ?? .failure(
+                        kind: kind,
+                        status: .parseFailed,
+                        method: kind.defaultMethod,
+                        failureReason: "Extraction policy skipped a full extraction attempt"
+                    )
+                )
+                continue
+            }
             guard let result else {
                 let failure = AttachmentExtractionResult.failure(
                     kind: kind,
@@ -258,6 +323,16 @@ public final class AttachmentExtractionWorker: @unchecked Sendable {
                 AttachmentExtractionRetryPolicy.recordAttempt(attachment: attachment, result: failure)
                 attachment.clearAttachmentSummary()
                 markedUnsupported += 1
+                continue
+            }
+            // A retry that read exactly the text already stored changes
+            // nothing the message's vectors, summary, triage or prepared
+            // replies were built from: only the schedule moves on.
+            if let storedPath = attachment.extractedTextPath,
+               let text = result.text,
+               result.hasExtractedText,
+               Self.storedText(at: storedPath) == text {
+                AttachmentExtractionRetryPolicy.recordAttempt(attachment: attachment, result: result)
                 continue
             }
             let artifacts = try persistExtractionArtifacts(
@@ -296,15 +371,19 @@ public final class AttachmentExtractionWorker: @unchecked Sendable {
         return MessageOutcome(extracted: extracted, markedUnsupported: markedUnsupported)
     }
 
+    /// The extracted text stored at `path`; nil when it cannot be read, so
+    /// the retry's text replaces it.
+    private static func storedText(at path: String) -> String? {
+        try? String(contentsOfFile: path, encoding: .utf8)
+    }
+
     private static func isPendingExtractionCandidate(_ attachment: Attachment) -> Bool {
-        guard attachment.extractedTextPath == nil else { return false }
         if AttachmentExtractionRetryPolicy.isRetryCandidate(attachment: attachment) {
             return true
         }
+        guard attachment.extractedTextPath == nil else { return false }
         if attachment.extractionStatus == nil && attachment.extractionMethod == nil {
-            return DocumentKind
-                .detect(mimeType: attachment.mimeType, filename: attachment.filename)
-                .isDocument
+            return attachment.declaredKind.isDocument
         }
         return false
     }

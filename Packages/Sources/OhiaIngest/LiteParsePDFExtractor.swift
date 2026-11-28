@@ -99,10 +99,17 @@ public struct LiteParsePDFExtractor: Sendable {
     }
 
     /// Wraps a service route as a `Parse`: failures and fallbacks are logged,
-    /// and failures thrown as `ExtractorError`.
+    /// and failures thrown as `ExtractorError`. A request the service could
+    /// not take, as when it reached a service process that was exiting (one
+    /// whose text recognizer broke, or whose PDFKit call overran), is sent
+    /// once more right away, to a fresh process, as image text recognition is
+    /// (`ImageTextRecognition.recognize`).
     static func parse(using request: @escaping @Sendable (_ pdf: Data, _ maxPages: Int) -> PDFParserReply) -> Parse {
         return { pdf, maxPages in
-            let reply = request(pdf, maxPages)
+            var reply = request(pdf, maxPages)
+            if reply.outcome == .serviceUnavailable {
+                reply = request(pdf, maxPages)
+            }
             switch reply.outcome {
             case .parsed, .cancelled:
                 break

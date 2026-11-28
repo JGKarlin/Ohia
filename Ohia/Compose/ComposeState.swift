@@ -598,9 +598,22 @@ final class ComposeState {
     }
 
     @discardableResult
-    func addAttachmentPaths(_ paths: [String]) -> Bool {
+    func addAttachmentPaths(
+        _ paths: [String],
+        saveContext: ComposerContextSaver = ComposerPersistence.save
+    ) -> Bool {
         guard let draft, isLivePendingDraft(ownerID: draft.id) else { return false }
         guard !paths.isEmpty else { return true }
+        // Pending edits commit first, so when this change's save fails,
+        // `rollback()` reverts only this change, not edits made since the
+        // last save, such as a typed subject awaiting the autosave this
+        // cancels.
+        do {
+            try saveContext(context)
+        } catch {
+            recordPersistenceFailure(error)
+            return false
+        }
         var existing = ComposeAddressEncoding.decode(draft.deliverablesJSON)
         existing.append(contentsOf: paths)
         draft.deliverablesJSON = ComposeAddressEncoding.encode(existing)
@@ -608,7 +621,7 @@ final class ComposeState {
         do {
             try projectPendingEditorChanges(on: draft)
             try ComposerDraftSyncScheduler.stageDraftSync(draft: draft, context: context)
-            try context.save()
+            try saveContext(context)
             acceptCurrentEditorAsProjected()
             return true
         } catch {
@@ -660,17 +673,27 @@ final class ComposeState {
     }
 
     @discardableResult
-    func removeAttachment(at index: Int) -> Bool {
+    func removeAttachment(
+        at index: Int,
+        saveContext: ComposerContextSaver = ComposerPersistence.save
+    ) -> Bool {
         guard let draft else { return false }
         var existing = ComposeAddressEncoding.decode(draft.deliverablesJSON)
         guard existing.indices.contains(index) else { return false }
+        // Pending edits commit first, as in `addAttachmentPaths`.
+        do {
+            try saveContext(context)
+        } catch {
+            recordPersistenceFailure(error)
+            return false
+        }
         let removedPath = existing.remove(at: index)
         draft.deliverablesJSON = ComposeAddressEncoding.encode(existing)
         cancelPendingAutosave()
         do {
             try projectPendingEditorChanges(on: draft)
             try ComposerDraftSyncScheduler.stageDraftSync(draft: draft, context: context)
-            try context.save()
+            try saveContext(context)
             acceptCurrentEditorAsProjected()
             ComposerAttachmentStore().deleteAttachment(
                 atOwnedPath: removedPath,
@@ -795,12 +818,20 @@ final class ComposeState {
         saveContext: ComposerContextSaver = ComposerPersistence.save
     ) -> Bool {
         let ownerID = draft.id
-        let mutationSnapshot = DiscardMutationSnapshot(draft: draft)
-        let preexistingInsertedSyncJobIDs = ComposerDiscardTransaction.insertedSyncJobIDs(
-            in: context
-        )
         let hasProviderLocation = draft.mailboxDraftFolderPath != nil
             && (draft.mailboxDraftUID != nil || draft.mailboxDraftMessageIDHeader != nil)
+        // Pending edits commit first, so when the discard's save fails the
+        // discard is the context's only pending change and `rollback()`
+        // reverts exactly it from the store. Undoing it by hand is not a
+        // restore: SwiftData can leave a re-inserted draft's revision with a
+        // nil `draft` while the draft still lists it, so relinking listed the
+        // revision twice, and the re-inserted draft drops out of change
+        // tracking, so its unsaved edits were never written.
+        do {
+            try saveContext(context)
+        } catch {
+            return false
+        }
         do {
             if hardDeleteLocalDraft && !hasProviderLocation {
                 context.delete(draft)
@@ -812,11 +843,7 @@ final class ComposeState {
             }
             try saveContext(context)
         } catch {
-            mutationSnapshot.restore(context: context)
-            ComposerDiscardTransaction.removeSyncJobsInserted(
-                after: preexistingInsertedSyncJobIDs,
-                context: context
-            )
+            context.rollback()
             return false
         }
         ComposerDraftAssetCleanup.deleteAll(
@@ -825,36 +852,6 @@ final class ComposeState {
             inlinePhotoStore: inlinePhotoStore
         )
         return true
-    }
-
-    private struct DiscardMutationSnapshot {
-        let draft: Draft
-        let status: DraftStatus
-        let interviewStateJSON: String?
-        let decisionResearchOverlayJSON: String?
-        let revisions: [DraftRevision]
-
-        init(draft: Draft) {
-            self.draft = draft
-            status = draft.status
-            interviewStateJSON = draft.interviewStateJSON
-            decisionResearchOverlayJSON = draft.decisionResearchOverlayJSON
-            revisions = draft.orderedRevisions
-        }
-
-        func restore(context: ModelContext) {
-            ComposerDiscardTransaction.reinsertIfDeleted(draft, context: context)
-            for revision in revisions {
-                ComposerDiscardTransaction.reinsertIfDeleted(revision, context: context)
-            }
-            draft.status = status
-            draft.interviewStateJSON = interviewStateJSON
-            draft.decisionResearchOverlayJSON = decisionResearchOverlayJSON
-            draft.revisions = revisions
-            for revision in revisions {
-                revision.draft = draft
-            }
-        }
     }
 
     // MARK: AI drafting

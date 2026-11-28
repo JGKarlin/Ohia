@@ -63,6 +63,11 @@ public struct VisualAttachmentAnalysisRecord: Codable, Sendable, Equatable {
     /// Optional so records written before barcode support remain decodable.
     public let decodedBarcodes: [String]?
     public let legacyEvidence: VisualAttachmentEvidence?
+    /// True when the image's text was not read because text recognition was
+    /// temporarily unavailable, so `visibleText` is empty for that reason and
+    /// not because the image has no text. Nil otherwise, and in records
+    /// written before this was recorded, which decode as they are.
+    public let textRecognitionUnavailable: Bool?
 
     public init(
         summary: String,
@@ -71,7 +76,8 @@ public struct VisualAttachmentAnalysisRecord: Codable, Sendable, Equatable {
         salientDetails: [String] = [],
         searchTerms: [String] = [],
         legacyEvidence: VisualAttachmentEvidence? = nil,
-        decodedBarcodes: [String] = []
+        decodedBarcodes: [String] = [],
+        textRecognitionUnavailable: Bool = false
     ) {
         self.summary = Self.normalizedScalar(summary, limit: Self.maxSummaryCharacters)
         self.contentKind = contentKind
@@ -94,6 +100,8 @@ public struct VisualAttachmentAnalysisRecord: Codable, Sendable, Equatable {
             return value
         }
         self.decodedBarcodes = codes.isEmpty ? nil : Array(codes.prefix(8))
+        let unavailable = textRecognitionUnavailable || legacyEvidence?.textRecognitionUnavailable == true
+        self.textRecognitionUnavailable = unavailable ? true : nil
     }
 
     public static func legacy(

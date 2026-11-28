@@ -1059,12 +1059,12 @@ struct TimelineSemanticViewport: View {
                     var images: [UUID: NSImage] = [:]
                     for attachment in imageAttachments {
                         guard let path = attachment.filePath,
-                              FileManager.default.fileExists(atPath: path),
-                              let image = NSImage(contentsOfFile: path) else {
+                              let image = await AttachmentPreviewImage.load(path: path) else {
                             continue
                         }
                         images[attachment.id] = image
                     }
+                    guard !Task.isCancelled else { return }
                     cachedImages = images
                 }
             }

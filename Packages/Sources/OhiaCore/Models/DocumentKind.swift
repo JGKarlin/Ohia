@@ -1,5 +1,10 @@
 import Foundation
 
+/// What an attachment is by its declared MIME type and filename, which
+/// decides the extraction that reads it: text extraction for documents
+/// (`isDocument`), visual extraction for images, none for `unsupported`.
+/// `Attachment` stores it when the row is created (`declaredDocumentKind`),
+/// so the extraction workers' store predicates compare a column.
 public enum DocumentKind: String, Codable, CaseIterable, Sendable, Equatable {
     case plainText
     case html
@@ -89,38 +94,6 @@ public enum DocumentKind: String, Codable, CaseIterable, Sendable, Equatable {
             return false
         default:
             return true
-        }
-    }
-
-    var isCheapInlineText: Bool {
-        switch self {
-        case .plainText, .html, .markdown, .csv, .tsv:
-            return true
-        default:
-            return false
-        }
-    }
-
-    public var defaultMethod: AttachmentExtractionMethod? {
-        switch self {
-        case .plainText, .markdown:
-            return .utf8Decode
-        case .csv, .tsv:
-            return .delimitedTable
-        case .html:
-            return .nsAttributedStringHTML
-        case .rtf:
-            return .nsAttributedStringRTF
-        case .pdf:
-            return .liteParsePDF
-        case .docx, .xlsx, .pptx:
-            return .swiftOOXML
-        case .legacyWord, .legacySpreadsheet, .legacyPresentation:
-            return .nsAttributedStringOffice
-        case .image:
-            return .visionOCR
-        case .unsupported:
-            return nil
         }
     }
 

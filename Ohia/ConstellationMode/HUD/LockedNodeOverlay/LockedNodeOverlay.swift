@@ -1263,37 +1263,83 @@ struct LockedNodeOverlay: View {
     @MainActor
     private func observeExtractionCompletions() async {
         for await event in jobCompletionBroadcaster.events() {
-            if event.type == .extractCaptureMetadata {
+            let queues: [LockedAttachmentExtractionQueue]
+            if event.isFullReconciliation {
+                // Completions fell out of a worker's bounded status history
+                // before this process saw them: any extraction may have run.
+                refreshAttachmentRowsInPlace()
+                queues = [.document, .visual]
+            } else if event.type == .extractCaptureMetadata {
                 // Capture time / place and a Mail Drop file's real size land
                 // without changing extraction state. Swap in rows that
                 // actually changed; never reset the lock (cards, popups and
                 // Tab position stay where the user left them).
                 refreshAttachmentRowsInPlace()
                 continue
+            } else if event.type == .extractAttachments {
+                queues = [.document]
+            } else if event.type == .extractVisualAttachments {
+                queues = [.visual]
+            } else {
+                continue
             }
-            guard event.type == .extractAttachments || event.type == .extractVisualAttachments else { continue }
             guard let context else { continue }
             // Only act when the locked message actually had pending work
             // before the worker tick. Otherwise every batch tick on every other
             // message would invalidate this lock's orientation.
-            let pendingAttachments = context.attachments.filter { attachment in
-                let status = LockedAttachmentExtractionStatus.classify(attachment)
-                switch event.type {
-                case .extractAttachments:
-                    return status.pendingQueue == .document
-                case .extractVisualAttachments:
-                    return status.pendingQueue == .visual
-                default:
-                    return false
-                }
+            let queuedAttachments = context.attachments.filter { attachment in
+                LockedAttachmentExtractionStatus.classify(attachment).pendingQueue.map(queues.contains) ?? false
             }
-            guard !pendingAttachments.isEmpty else { continue }
+            // An attachment waiting for a retry counts only once the retry
+            // has run, and rebuilds the lock only when it read something new;
+            // one that only moved or ended its schedule is swapped in place.
+            // Until then the worker's ticks for other messages leave it and
+            // this lock alone.
+            let retried = queues.map { retryOutcomes(of: context.attachments, queue: $0) }
+            let pendingAttachments = queuedAttachments + retried.flatMap(\.reload)
+            guard !pendingAttachments.isEmpty else {
+                swapAttachmentRowsInPlace(retried.flatMap(\.swap))
+                continue
+            }
             await contextOrientationService.invalidate(vectorId: lockedVectorId)
             for pending in pendingAttachments {
                 await attachmentSummaryService.invalidate(attachmentID: pending.id)
                 attachmentSummaryStates[pending.id] = nil
             }
             await loadContext()
+        }
+    }
+
+    /// What a worker tick for `queue` did to the locked message's
+    /// attachments that were waiting for its retry
+    /// (`LockedAttachmentExtractionStatus.retryOutcomes`), from their rows
+    /// re-read now.
+    @MainActor
+    private func retryOutcomes(
+        of attachments: [LockedAttachmentSummary],
+        queue: LockedAttachmentExtractionQueue
+    ) -> (reload: [LockedAttachmentSummary], swap: [LockedAttachmentSummary]) {
+        let waiting = attachments.filter { attachment in
+            (queue == .visual ? attachment.visualRetryAt : attachment.textRetryAt) != nil
+        }
+        guard !waiting.isEmpty else { return ([], []) }
+        let ids = waiting.map(\.id)
+        let rows = (try? modelContext.fetch(FetchDescriptor<OhiaCore.Attachment>(
+            predicate: #Predicate<OhiaCore.Attachment> { ids.contains($0.id) }
+        ))) ?? []
+        let fresh = Dictionary(uniqueKeysWithValues: rows.map { ($0.id, LockedAttachmentSummary(attachment: $0)) })
+        return LockedAttachmentExtractionStatus.retryOutcomes(current: waiting, fresh: fresh, queue: queue)
+    }
+
+    /// Replaces the given attachments' rows in the lock's context, leaving
+    /// cards, popups and Tab position where they are.
+    @MainActor
+    private func swapAttachmentRowsInPlace(_ latest: [LockedAttachmentSummary]) {
+        guard !latest.isEmpty, let current = context?.attachments else { return }
+        let byID = Dictionary(uniqueKeysWithValues: latest.map { ($0.id, $0) })
+        let swapped = current.map { byID[$0.id] ?? $0 }
+        if swapped != current {
+            context?.attachments = swapped
         }
     }
 

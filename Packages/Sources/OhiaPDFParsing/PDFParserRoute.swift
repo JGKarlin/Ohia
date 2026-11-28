@@ -4,19 +4,23 @@ import Synchronization
 /// How a process reaches `OhiaPDFParser.xpc`: the app calls the service it
 /// embeds; a worker service, which cannot, sends each request to the app over
 /// its broker connection (`PDFParserRelay`). Any other process, such as a test
-/// runner, has no route, and PDFs are then not read at all: PDFKit and
-/// LiteParse never open an untrusted PDF outside the service.
+/// runner, has no route, and PDFs and the text in images are then not read
+/// at all: PDFKit and LiteParse never open an untrusted PDF, and Vision never
+/// recognizes text in an untrusted image, outside the service.
 public enum PDFParserRoute {
     public struct Service: Sendable {
         public let parse: @Sendable (_ pdf: Data, _ maxPages: Int) -> PDFParserReply
         public let renderPages: @Sendable (_ pdf: Data, _ maxPages: Int, _ maxPixelSize: Int) -> PDFRenderReply
+        public let recognizeText: ImageTextRecognition.Recognize
 
         public init(
             parse: @escaping @Sendable (_ pdf: Data, _ maxPages: Int) -> PDFParserReply,
-            renderPages: @escaping @Sendable (_ pdf: Data, _ maxPages: Int, _ maxPixelSize: Int) -> PDFRenderReply
+            renderPages: @escaping @Sendable (_ pdf: Data, _ maxPages: Int, _ maxPixelSize: Int) -> PDFRenderReply,
+            recognizeText: @escaping ImageTextRecognition.Recognize
         ) {
             self.parse = parse
             self.renderPages = renderPages
+            self.recognizeText = recognizeText
         }
     }
 
@@ -41,7 +45,8 @@ public enum PDFParserRoute {
             parse: { pdf, maxPages in client.parse(pdf, maxPages: maxPages) },
             renderPages: { pdf, maxPages, maxPixelSize in
                 client.renderPages(pdf, maxPages: maxPages, maxPixelSize: maxPixelSize)
-            }
+            },
+            recognizeText: { image in client.recognizeText(image) }
         )
     }
 }

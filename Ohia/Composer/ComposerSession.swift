@@ -373,7 +373,12 @@ final class ComposerSession {
         !ccChips.isEmpty || !bccChips.isEmpty
     }
 
-    init(message: Message) {
+    /// Saves the context for the session's own edits; tests supply one that
+    /// fails.
+    @ObservationIgnored private let saveContext: ComposerContextSaver
+
+    init(message: Message, saveContext: @escaping ComposerContextSaver = ComposerPersistence.save) {
+        self.saveContext = saveContext
         self.messageID = message.id
         self.correspondentName = message.fromName ?? message.fromAddress
         self.correspondentEmail = message.fromAddress
@@ -1162,6 +1167,15 @@ final class ComposerSession {
             || replyRecipientStateSignature != signature else {
             return true
         }
+        // Pending edits commit first, so when this change's save fails,
+        // `rollback()` reverts only this change, not edits made since the
+        // last save.
+        do {
+            try saveContext(context)
+        } catch {
+            print("[Ohia] Composer reply recipient change: pending edits did not save: \(String(reflecting: type(of: error)))")
+            return false
+        }
         draft.replyToAddressesJSON = toJSON
         draft.replyCcAddressesJSON = ccJSON
         draft.replyBccAddressesJSON = bccJSON
@@ -1171,7 +1185,7 @@ final class ComposerSession {
         draft.decisionResearchOverlayJSON = nil
         do {
             try ComposerDraftSyncScheduler.stageDraftSync(draft: draft, context: context)
-            try context.save()
+            try saveContext(context)
             replyRecipientMode = mode
             replyRecipientStateSignature = signature
             interviewState = nil
@@ -1348,10 +1362,17 @@ final class ComposerSession {
         guard let draft = backingDraft(in: context), draft.status == .pending else { return false }
         let encoded = ComposeAddressEncoding.encode(paths)
         guard draft.replyAttachmentPathsJSON != encoded || attachmentPaths != paths else { return true }
+        // Pending edits commit first, as in `persistReplyRecipients`.
+        do {
+            try saveContext(context)
+        } catch {
+            print("[Ohia] Composer reply attachment change: pending edits did not save: \(String(reflecting: type(of: error)))")
+            return false
+        }
         draft.replyAttachmentPathsJSON = encoded
         do {
             try ComposerDraftSyncScheduler.stageDraftSync(draft: draft, context: context)
-            try context.save()
+            try saveContext(context)
             attachmentPaths = paths
             return true
         } catch {

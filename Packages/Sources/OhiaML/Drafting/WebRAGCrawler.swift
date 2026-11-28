@@ -2,6 +2,7 @@ import CryptoKit
 import Darwin
 import Foundation
 import OhiaIngest
+import OhiaPDFParsing
 import SwiftSoup
 
 public struct WebRAGConfig: Sendable, Equatable {
@@ -660,9 +661,14 @@ public struct WebRAGCrawler: Sendable {
             guard response.data.count <= config.maxHTMLBytes else {
                 throw WebRAGCrawlerError.unsupportedContent("PDF exceeds the document size limit")
             }
-            guard let text = pdfText(response.data)?.trimmingCharacters(in: .whitespacesAndNewlines),
-                  !text.isEmpty else { throw WebRAGCrawlerError.emptyContent }
+            // The parse waits on the sandboxed parser service; it runs off
+            // Swift's task threads.
+            let pdfText = self.pdfText
+            let data = response.data
+            let extracted = await PDFParserBlockingCall.run { pdfText(data) }
             try Task.checkCancellation()
+            guard let text = extracted?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !text.isEmpty else { throw WebRAGCrawlerError.emptyContent }
             let title = pending.anchorText ?? finalURL.lastPathComponent
             let page = WebRAGPage(sourceURL: Self.normalizedURLString(finalURL),
                 canonicalURL: Self.normalizedURLString(finalURL), pageTitle: title,

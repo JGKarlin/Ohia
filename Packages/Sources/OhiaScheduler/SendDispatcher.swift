@@ -8,11 +8,19 @@ public final class SendDispatcher {
     private let context: ModelContext
     private let jobQueue: JobQueue
     private let userDefaults: UserDefaults
+    private let save: @MainActor (ModelContext) throws -> Void
 
-    public init(context: ModelContext, jobQueue: JobQueue, userDefaults: UserDefaults = .standard) {
+    /// `save` writes the context; tests supply one that fails.
+    public init(
+        context: ModelContext,
+        jobQueue: JobQueue,
+        userDefaults: UserDefaults = .standard,
+        save: @escaping @MainActor (ModelContext) throws -> Void = { try $0.save() }
+    ) {
         self.context = context
         self.jobQueue = jobQueue
         self.userDefaults = userDefaults
+        self.save = save
     }
 
     public enum Error: Swift.Error, Equatable {
@@ -41,6 +49,22 @@ public final class SendDispatcher {
         account: Account,
         identity: Identity,
         approvedTrainingSignalsJSON: String? = nil
+    ) throws -> UUID {
+        try commitAlone {
+            try queueSend(
+                draft: draft,
+                account: account,
+                identity: identity,
+                approvedTrainingSignalsJSON: approvedTrainingSignalsJSON
+            )
+        }
+    }
+
+    private func queueSend(
+        draft: Draft,
+        account: Account,
+        identity: Identity,
+        approvedTrainingSignalsJSON: String?
     ) throws -> UUID {
         guard let msg = draft.message else { throw Error.noRecipient }
         guard draft.status == .pending else { throw Error.alreadyQueued }
@@ -119,11 +143,9 @@ public final class SendDispatcher {
         context.insert(item)
 
         draft.status = .confirmed
-        try ComposerDraftSyncScheduler.enqueueDraftSync(draft: draft, context: context)
+        try ComposerDraftSyncScheduler.stageDraftSync(draft: draft, context: context)
 
-        try jobQueue.enqueue(type: .sendOutbox, priority: 1, context: context)
-
-        try context.save()
+        jobQueue.stage(type: .sendOutbox, priority: 1, context: context)
         return item.id
     }
 
@@ -162,19 +184,19 @@ public final class SendDispatcher {
     ///   (higher than the default priority-6 so the user's request is
     ///   serviced sooner).
     public func reject(draft: Draft, kind: RejectKind) throws {
-        switch kind {
-        case .noReply:
-            draft.status = .rejected
-            draft.message?.requiresReply = false
-            try ComposerDraftSyncScheduler.enqueueDraftSync(draft: draft, context: context)
+        try commitAlone {
+            switch kind {
+            case .noReply:
+                draft.status = .rejected
+                draft.message?.requiresReply = false
+                try ComposerDraftSyncScheduler.stageDraftSync(draft: draft, context: context)
 
-        case .regenerate(let feedback):
-            draft.message?.regenerationFeedback = feedback
-            draft.stageRaw = DraftStage.generating
-            try jobQueue.enqueue(type: .generateDraft, priority: 4, context: context)
+            case .regenerate(let feedback):
+                draft.message?.regenerationFeedback = feedback
+                draft.stageRaw = DraftStage.generating
+                jobQueue.stage(type: .generateDraft, priority: 4, context: context)
+            }
         }
-
-        try context.save()
     }
 
     /// Build an `OutboxItem` from a `.userCompose` draft and enqueue a
@@ -184,6 +206,16 @@ public final class SendDispatcher {
     /// to its later confirmation.
     @discardableResult
     public func enqueueCompose(draft: Draft, account: Account, identity: Identity) throws -> UUID {
+        let itemID = try commitAlone {
+            try queueCompose(draft: draft, account: account, identity: identity)
+        }
+        // Persist most-recently-used account so the next blank compose
+        // defaults to the same From.
+        userDefaults.set(account.id.uuidString, forKey: "ohia.compose.lastUsedAccountID")
+        return itemID
+    }
+
+    private func queueCompose(draft: Draft, account: Account, identity: Identity) throws -> UUID {
         guard !draft.hasPendingStyleControlDecision else { throw Error.pendingStyleDecision }
         guard !identity.address.isEmpty else { throw Error.noIdentity }
 
@@ -235,15 +267,29 @@ public final class SendDispatcher {
         context.insert(item)
 
         draft.status = .confirmed
-        try ComposerDraftSyncScheduler.enqueueDraftSync(draft: draft, context: context)
+        try ComposerDraftSyncScheduler.stageDraftSync(draft: draft, context: context)
 
-        // Persist most-recently-used account so the next blank compose
-        // defaults to the same From.
-        userDefaults.set(account.id.uuidString, forKey: "ohia.compose.lastUsedAccountID")
-
-        try jobQueue.enqueue(type: .sendOutbox, priority: 1, context: context)
-        try context.save()
+        jobQueue.stage(type: .sendOutbox, priority: 1, context: context)
         return item.id
+    }
+
+    /// Runs one send-side change in a save of its own. Pending edits commit
+    /// first, so when the change or its save fails, `rollback()` reverts
+    /// exactly the change: a failed send leaves no queued item, confirmed
+    /// status or send job pending for a later, unrelated save to commit, and
+    /// the user's edits stay saved.
+    /// The change itself only stages: its jobs are staged, not enqueued,
+    /// since enqueueing saves on its own.
+    private func commitAlone<Value>(_ change: () throws -> Value) throws -> Value {
+        try save(context)
+        do {
+            let value = try change()
+            try save(context)
+            return value
+        } catch {
+            context.rollback()
+            throw error
+        }
     }
 
     /// Freezes, with the outbox item, the generated revision the sent body

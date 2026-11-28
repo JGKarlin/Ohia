@@ -43,14 +43,20 @@ public final class ModelActivityStatusPublisher: @unchecked Sendable {
     private let lock = NSLock()
     private var activities: [UUID: Activity] = [:]
     private var recentActivities: [UUID: RecentActivity] = [:]
+    private let now: @Sendable () -> Date
 
-    public init() {}
-
-    public var snapshot: Snapshot {
-        makeSnapshot(at: Date())
+    /// `now` is the clock that stamps activities when no date is given and
+    /// ages finished ones out of `recentActivities`.
+    public init(now: @escaping @Sendable () -> Date = { Date() }) {
+        self.now = now
     }
 
-    public func makeSnapshot(at date: Date = Date()) -> Snapshot {
+    public var snapshot: Snapshot {
+        makeSnapshot()
+    }
+
+    public func makeSnapshot(at date: Date? = nil) -> Snapshot {
+        let date = date ?? now()
         lock.lock()
         pruneRecentActivities(at: date)
         let active = Self.sortedActivities(Array(activities.values))
@@ -65,8 +71,9 @@ public final class ModelActivityStatusPublisher: @unchecked Sendable {
         source: String? = nil,
         accountID: UUID? = nil,
         subject: String? = nil,
-        at date: Date = Date()
+        at date: Date? = nil
     ) -> Token {
+        let date = date ?? now()
         let id = UUID()
         let activity = Activity(
             id: id,
@@ -87,8 +94,9 @@ public final class ModelActivityStatusPublisher: @unchecked Sendable {
         return Token(id: id)
     }
 
-    public func end(_ token: Token, at date: Date = Date(),
+    public func end(_ token: Token, at date: Date? = nil,
                     outcome: SessionActivityEvent.Phase = .ended, detail: String? = nil) {
+        let date = date ?? now()
         lock.lock()
         let ended = activities.removeValue(forKey: token.id)
         if let activity = ended {

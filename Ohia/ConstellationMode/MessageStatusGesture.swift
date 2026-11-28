@@ -299,18 +299,26 @@ func messageStatusLerp(_ a: Double, _ b: Double, _ t: Double) -> Double {
 /// column acts on a whole selection).
 @Observable @MainActor
 final class MessageStatusGestureCoordinator {
-    typealias FlagSettleWait = @MainActor (Duration) async throws -> Void
+    typealias Wait = @MainActor (Duration) async throws -> Void
 
     private(set) var gestures: [UUID: MessageStatusGesture] = [:]
     private var expiryTask: Task<Void, Never>?
-    @ObservationIgnored private let flagSettleWait: FlagSettleWait
+    @ObservationIgnored private let flagSettleWait: Wait
+    @ObservationIgnored private let expiryWait: Wait
 
+    /// `flagSettleWait` waits out a flag gesture's motion floor and
+    /// `expiryWait` the time until the next safety expiry; both are the real
+    /// clock unless a test supplies its own.
     init(
-        flagSettleWait: @escaping FlagSettleWait = { delay in
+        flagSettleWait: @escaping Wait = { delay in
+            try await Task.sleep(for: delay)
+        },
+        expiryWait: @escaping Wait = { delay in
             try await Task.sleep(for: delay)
         }
     ) {
         self.flagSettleWait = flagSettleWait
+        self.expiryWait = expiryWait
     }
 
     /// Safety ceiling: a gesture never outlives this even if the snapshot never
@@ -477,9 +485,10 @@ final class MessageStatusGestureCoordinator {
             return
         }
         let delay = max(0, nextExpiration.timeIntervalSinceNow)
-        expiryTask = Task { @MainActor [weak self] in
+        let expiryWait = expiryWait
+        expiryTask = Task { @MainActor [weak self, expiryWait] in
             do {
-                try await Task.sleep(for: .seconds(delay))
+                try await expiryWait(.seconds(delay))
             } catch {
                 return
             }

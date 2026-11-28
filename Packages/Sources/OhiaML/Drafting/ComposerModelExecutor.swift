@@ -119,74 +119,56 @@ public struct ComposerModelExecutor: Sendable {
         }
         let scope: GenerationPersonalizationScope = forceBase ? .base : role.scope
         let roleSampling = sampling(for: role)
-        let started = Date()
+        let started = action.now()
         let tokens = TokenCount()
-        let watchdog = Task.detached {
-            try await Task.sleep(for: .seconds(action.remainingSeconds))
-            action.cancel()
-        }
-        defer { watchdog.cancel() }
         do {
-            let result = try await withTaskCancellationHandler {
-                let work = Task.detached(priority: .userInitiated) {
-                    func generate() throws -> GenerationResult {
-                        try action.check()
-                        let counter = engine as? any PromptTokenCounting
-                        let promptTokens = Self.promptTokens(prompt.prompt, counter: counter)
-                        tokens.value.withLock { $0 = promptTokens }
-                        let outputLimit: Int
-                        if role.writesEmail {
-                            outputLimit = min(maximumTokens, writerSequenceLimit - promptTokens - 1)
-                            guard outputLimit >= Self.minimumWriterOutputTokens else { throw ComposerContentError.budgetExceeded }
-                        } else {
-                            outputLimit = maximumTokens
+            let result = try await action.runBounded {
+                func generate() throws -> GenerationResult {
+                    try action.check()
+                    let counter = engine as? any PromptTokenCounting
+                    let promptTokens = Self.promptTokens(prompt.prompt, counter: counter)
+                    tokens.value.withLock { $0 = promptTokens }
+                    let outputLimit: Int
+                    if role.writesEmail {
+                        outputLimit = min(maximumTokens, writerSequenceLimit - promptTokens - 1)
+                        guard outputLimit >= Self.minimumWriterOutputTokens else { throw ComposerContentError.budgetExceeded }
+                    } else {
+                        outputLimit = maximumTokens
+                    }
+                    if let contextLimit = counter?.maximumContextTokens,
+                       promptTokens + outputLimit > contextLimit { throw ComposerContentError.budgetExceeded }
+                    try action.check()
+                    let activityToken = activityPublisher?.begin(.drafting, source: "\(activitySource)-\(role.rawValue)")
+                    defer { if let activityToken { activityPublisher?.end(activityToken) } }
+                    if let thinkingTokens {
+                        guard let verifier = engine as? any BoundedReasoningGenerating else {
+                            throw TrainingEngineError.generationFailed("The training verifier requires bounded reasoning support.")
                         }
-                        if let contextLimit = counter?.maximumContextTokens,
-                           promptTokens + outputLimit > contextLimit { throw ComposerContentError.budgetExceeded }
-                        try action.check()
-                        let activityToken = activityPublisher?.begin(.drafting, source: "\(activitySource)-\(role.rawValue)")
-                        defer { if let activityToken { activityPublisher?.end(activityToken) } }
-                        if let thinkingTokens {
-                            guard let verifier = engine as? any BoundedReasoningGenerating else {
-                                throw TrainingEngineError.generationFailed("The training verifier requires bounded reasoning support.")
-                            }
-                            return try verifier.generateWithBoundedReasoning(prompt: prompt.prompt,
-                                thinkingTokens: thinkingTokens, answerTokens: outputLimit,
-                                cancellation: action.cancellation, personalization: .base,
-                                seed: roleSampling.seed, answerSampling: roleSampling,
-                                diagnostics: { _ in }).answer
-                        }
-                        if let worker = engine as? WorkerGenerationEngine {
-                            // Use the same profile and replay seed on both
-                            // sides of the process boundary.
-                            return try worker.generateResult(prompt: prompt, maxTokens: outputLimit,
-                                cancellation: action.cancellation, activityKind: .drafting,
-                                personalization: scope, sampling: roleSampling)
-                        }
-                        return try PrefixCachedGeneration.generateResult(engine: engine, prompt: prompt,
-                            maxTokens: outputLimit, cancellation: action.cancellation,
+                        return try verifier.generateWithBoundedReasoning(prompt: prompt.prompt,
+                            thinkingTokens: thinkingTokens, answerTokens: outputLimit,
+                            cancellation: action.cancellation, personalization: .base,
+                            seed: roleSampling.seed, answerSampling: roleSampling,
+                            diagnostics: { _ in }).answer
+                    }
+                    if let worker = engine as? WorkerGenerationEngine {
+                        // Use the same profile and replay seed on both
+                        // sides of the process boundary.
+                        return try worker.generateResult(prompt: prompt, maxTokens: outputLimit,
+                            cancellation: action.cancellation, activityKind: .drafting,
                             personalization: scope, sampling: roleSampling)
                     }
-                    if let serial = engine as? any CancellableGenerationOperation {
-                        return try serial.withGenerationOperation(cancellation: action.cancellation, operation: generate)
-                    }
-                    return try generate()
+                    return try PrefixCachedGeneration.generateResult(engine: engine, prompt: prompt,
+                        maxTokens: outputLimit, cancellation: action.cancellation,
+                        personalization: scope, sampling: roleSampling)
                 }
-                // A cancellation aimed at this action (a deleted draft, the
-                // deadline watchdog) must reach the engine's cooperative
-                // checks as task cancellation too, not only through the token.
-                let observer = Task.detached {
-                    while !Task.isCancelled {
-                        if action.cancellation.isCancelled { work.cancel(); return }
-                        try? await Task.sleep(for: .milliseconds(50))
-                    }
+                if let serial = engine as? any CancellableGenerationOperation {
+                    return try serial.withGenerationOperation(cancellation: action.cancellation, operation: generate)
                 }
-                defer { observer.cancel() }
-                return try await work.value
-            } onCancel: { action.cancel() }
+                return try generate()
+            }
             try action.check()
             try trace(Trace(prompt: prompt.prompt, stage: ComposerPipelineStage(role: role, scope: scope,
-                promptTokens: tokens.value.withLock { $0 }, elapsed: Date().timeIntervalSince(started),
+                promptTokens: tokens.value.withLock { $0 }, elapsed: action.now().timeIntervalSince(started),
                 completed: result.stopReason != .maxTokens, error: nil,
                 reusedPromptTokens: result.diagnostics?.reusedPromptTokenCount,
                 prefillSeconds: result.diagnostics?.promptSeconds,
@@ -196,9 +178,9 @@ public struct ComposerModelExecutor: Sendable {
                 personalization: result.personalization, diagnostics: result.diagnostics)
         } catch {
             try trace(Trace(prompt: prompt.prompt, stage: ComposerPipelineStage(role: role, scope: scope,
-                promptTokens: tokens.value.withLock { $0 }, elapsed: Date().timeIntervalSince(started),
+                promptTokens: tokens.value.withLock { $0 }, elapsed: action.now().timeIntervalSince(started),
                 completed: false, error: String(describing: error)), result: nil))
-            if Date() >= action.deadline { throw ComposerContentError.deadlineExceeded }
+            if action.isPastDeadline { throw ComposerContentError.deadlineExceeded }
             throw error
         }
     }

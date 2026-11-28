@@ -576,7 +576,8 @@ final class WorkerFleetSupervisor {
                 )
             },
             pdfParseResolver: WorkerXPCCommandBroker.appPDFParseResolver,
-            pdfRenderResolver: WorkerXPCCommandBroker.appPDFRenderResolver
+            pdfRenderResolver: WorkerXPCCommandBroker.appPDFRenderResolver,
+            textRecognitionResolver: WorkerXPCCommandBroker.appTextRecognitionResolver
         )
     }
 

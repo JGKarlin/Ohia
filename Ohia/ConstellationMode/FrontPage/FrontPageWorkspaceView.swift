@@ -171,6 +171,7 @@ struct FrontPageWorkspaceView: View {
                     summaryUnavailableMessageIds: summaryUnavailableMessageIds,
                     isSummaryRegenerating: regeneratingSummaryMessageIds.contains(article.messageIdString),
                     loadReaderPayload: { await dataController.loadReaderPayload(for: $0) },
+                    loadReaderAttachments: { await dataController.loadReaderAttachments(for: $0) },
                     onRequestSummary: onRequestSummary,
                     onBack: { workspace.dismissReader() },
                     actions: gestureActions,

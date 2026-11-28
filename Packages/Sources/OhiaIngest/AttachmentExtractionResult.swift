@@ -43,6 +43,18 @@ public struct AttachmentExtractionResult: Sendable, Equatable {
     public let documentTitle: String?
     public let documentAuthor: String?
     public let failureReason: String?
+    /// Text in the attachment's pixels could not be read now because text
+    /// recognition was temporarily unavailable (the parser service timed
+    /// out, could not be reached, or its recognizer broke twice), though the
+    /// rest of the extraction stands. `AttachmentExtractionRetryPolicy`
+    /// retries such an attempt like a failed one, keeping what it stored.
+    /// Never persisted: the retry schedule it sets is.
+    public let textRecognitionUnavailable: Bool
+
+    /// What a result whose text recognition was unavailable says in
+    /// `failureReason` when it carries no other reason.
+    public static let textRecognitionUnavailableReason =
+        "Text in the attachment's images was not read: text recognition was unavailable"
 
     public init(
         text: String?,
@@ -58,7 +70,8 @@ public struct AttachmentExtractionResult: Sendable, Equatable {
         structureUnitCount: Int? = nil,
         documentTitle: String? = nil,
         documentAuthor: String? = nil,
-        failureReason: String? = nil
+        failureReason: String? = nil,
+        textRecognitionUnavailable: Bool = false
     ) {
         let normalizedText = text?.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedEmbeddingText = embeddingText?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -78,6 +91,30 @@ public struct AttachmentExtractionResult: Sendable, Equatable {
         self.documentTitle = Self.normalizedMetadata(documentTitle)
         self.documentAuthor = Self.normalizedMetadata(documentAuthor)
         self.failureReason = failureReason
+        self.textRecognitionUnavailable = textRecognitionUnavailable
+    }
+
+    /// This result, noting that text in its pixels could not be read for
+    /// now (`textRecognitionUnavailable`), with that as its failure reason
+    /// when it has none.
+    public func markingTextRecognitionUnavailable() -> AttachmentExtractionResult {
+        AttachmentExtractionResult(
+            text: text,
+            kind: kind,
+            status: status,
+            method: method,
+            parserVersion: parserVersion,
+            extractedCharacterCount: extractedCharacterCount,
+            embeddingText: embeddingText,
+            normalizedIRJSON: normalizedIRJSON,
+            ragDocumentJSON: ragDocumentJSON,
+            structureUnitKind: structureUnitKind,
+            structureUnitCount: structureUnitCount,
+            documentTitle: documentTitle,
+            documentAuthor: documentAuthor,
+            failureReason: failureReason ?? Self.textRecognitionUnavailableReason,
+            textRecognitionUnavailable: true
+        )
     }
 
     private static func normalizedMetadata(_ value: String?) -> String? {

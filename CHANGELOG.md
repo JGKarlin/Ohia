@@ -2,6 +2,25 @@
 
 All notable changes to Ohia are recorded here. Versions follow [semantic versioning](https://semver.org), and each one is published as a tagged release on GitHub with a notarized disk image.
 
+## [0.12.0] - 2026-11-28
+
+### Added
+
+- An attachment whose text could not be read yet shows "will retry", with the time of the next attempt, instead of looking finished or failed. Ohia tries such an image or scanned PDF again after 5 minutes and after 30 minutes.
+- The Front Page reader's attachment list updates while an article is open: badges, image descriptions, photo details and summaries appear as they finish.
+
+### Security
+
+- Text in images is read only inside the sandboxed service that already opens PDFs, with no network access and no access to Ohia's data. If the system text recognizer stops working, the service restarts itself and the image is tried again.
+- An image that would need more than 512 MB of memory to decode is refused before it is decoded, wherever Ohia reads or draws images, and a PDF named like an image is never opened as one.
+
+### Fixed
+
+- A message whose sending failed could be sent later, when an unrelated change was saved. A failed send or No Reply now leaves nothing behind.
+- A failed save in the Composer (adding an attachment, a recipient or a source, changing the queue, discarding a draft) no longer loses the edits made since the last save, and a draft restored after a failed discard keeps each of its revisions once.
+- Composer time limits, and stopping the work on a deleted draft, take effect even while the local model is busy.
+- Background attachment processing no longer slows down in large mailboxes.
+
 ## [0.11.0] - 2026-11-26
 
 ### Added
@@ -58,6 +77,7 @@ First public release.
 - Accounts connect with an app password over IMAP and SMTP. Signing in with Google or Microsoft accounts is not included, so Microsoft accounts (Outlook.com, Hotmail, Microsoft 365) cannot connect in this release.
 - Apple silicon and macOS 26.4 or later only.
 
+[0.12.0]: https://github.com/JGKarlin/Ohia/releases/tag/v0.12.0
 [0.11.0]: https://github.com/JGKarlin/Ohia/releases/tag/v0.11.0
 [0.10.0]: https://github.com/JGKarlin/Ohia/releases/tag/v0.10.0
 [0.9.0]: https://github.com/JGKarlin/Ohia/releases/tag/v0.9.0

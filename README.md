@@ -230,7 +230,7 @@ Background work runs outside the app, in XPC services built from the same Swift 
 - **OhiaRetrievalWorker** does the mail and index work: downloading and parsing mail over IMAP, extracting attachments, analyzing images, embedding, indexing, the neighbour graph, the spatial layout, clustering, and sending mail from the outbox.
 - **OhiaGenerativeWorker** runs the Qwen model: interpretation, summaries, answers for Ask, Composer preparation and drafting, Memories, and training.
 - **OhiaMessagesReader** reads your Messages history, only if you grant it access, so the Composer can see recent texts with a correspondent.
-- **OhiaPDFParser** opens every PDF Ohia reads, in a sandbox of its own with no network access and no access to Ohia's data. It parses PDFs with the bundled LiteParse parser, reads their text with PDFKit when LiteParse fails, and renders pages as images for Apple Intelligence; only the text and the images leave it. The app calls it directly, and the workers send their PDFs through the app. Mail ingestion, attachment extraction and image analysis open PDFs nowhere else, and decode images with ImageIO, which does not read PDF, so a PDF named like an image is not opened either.
+- **OhiaPDFParser** opens every PDF Ohia reads and reads the text in every image, in a sandbox of its own with no network access and no access to Ohia's data. It parses PDFs with the bundled LiteParse parser, reads their text with PDFKit when LiteParse fails, renders pages as images for Apple Intelligence, and runs Vision text recognition on images; only the text and the images leave it. If Vision's text recognizer stops working, the service restarts itself once the callers in flight have their replies. The app calls it directly, and the workers send their PDFs and images through the app. Mail ingestion, attachment extraction and image analysis open PDFs nowhere else. Wherever Ohia decodes or draws an image, it first checks from the file's bytes that it is a raster image whose decode fits a 512 MB budget, or an SVG, which is drawn as a vector, so a PDF named like an image is not opened, and an image that declares gigabytes of pixels is not decoded.
 
 Work is held in a persistent job queue, and each worker takes the kinds of job it owns. On Macs with 16 GB of memory or less, only one model is loaded at a time. Background model work steps aside when you are using Ohia, and requests you make yourself (a draft, an answer, a translation) take priority. Work slows or pauses under memory pressure, high temperature, on battery or in Low Power Mode, and training waits until the Mac is idle.
 
@@ -274,7 +274,7 @@ Each attachment is converted to text by a method suited to its type:
 | Word, Excel, PowerPoint | Ohia's own Office Open XML extractor |
 | CSV, TSV, Excel sheets | Parsed into typed tables, so rows and columns survive |
 | HTML, RTF, older Office formats | macOS's text system |
-| Images | Vision text recognition, with each image's language detected automatically |
+| Images | Vision text recognition, inside the sandboxed OhiaPDFParser service, with each image's language detected automatically |
 
 Extracted documents are normalized into a structured form that keeps page, sheet and section boundaries, and that structure decides where the text is cut into chunks for embedding.
 

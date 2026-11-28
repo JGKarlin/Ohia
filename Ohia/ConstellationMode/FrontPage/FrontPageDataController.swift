@@ -1,11 +1,11 @@
 import Foundation
 import OSLog
-import ImageIO
 import SwiftData
 import Observation
 import OhiaCore
 import OhiaMail
 import OhiaML
+import OhiaPDFParsing
 import OhiaScheduler
 
 nonisolated struct FrontPagePreflightKey: Equatable {
@@ -723,6 +723,23 @@ final class FrontPageDataController {
     func loadReaderPayload(for messageID: UUID) async -> FrontPageReaderPayload {
         guard let container = modelContext?.container else { return .empty }
         return await Self.readerPayload(for: messageID, in: container)
+    }
+
+    /// Re-reads the article's attachments in a private SwiftData context, for
+    /// the open reader's live Attachments catalog
+    /// (`FrontPageReaderView.refreshAttachmentsOnCompletion`).
+    func loadReaderAttachments(for messageID: UUID) async -> [LockedAttachmentSummary] {
+        guard let container = modelContext?.container else { return [] }
+        return await Self.readerAttachments(for: messageID, in: container)
+    }
+
+    @concurrent
+    static func readerAttachments(
+        for messageID: UUID,
+        in container: ModelContainer
+    ) async -> [LockedAttachmentSummary] {
+        guard Task.isCancelled == false else { return [] }
+        return attachmentSummaries(for: messageID, modelContext: ModelContext(container))
     }
 
     @concurrent
@@ -2651,38 +2668,28 @@ final class FrontPageDataController {
         return enrichments
     }
 
-    /// First card-sized `image/*` attachment with an on-disk path. Tiny inline
-    /// affordances such as PDF icons are not editorial artwork; skip them and
-    /// keep looking so the card is text-only unless a later eligible image is
-    /// available.
+    /// First card-sized `image/*` attachment with an on-disk path that the
+    /// card may draw: its bytes pass `ImageDecodeBudget.admitsDrawing`, the
+    /// check the card's loader makes (`AttachmentPreviewImage`), read through
+    /// a memory map so only the header's pages, or an SVG's first bytes, are
+    /// read. Tiny inline affordances such as PDF icons are not editorial
+    /// artwork, and a file the card would refuse would leave it blank; skip
+    /// both and keep looking so the card is text-only unless a later eligible
+    /// image is available. An SVG has no pixel size and stays eligible.
     nonisolated private static func representativeImagePath(for message: Message) -> String? {
         for attachment in message.attachments {
             guard attachment.mimeType.lowercased().hasPrefix("image/"),
                   let path = attachment.filePath,
-                  path.isEmpty == false else { continue }
-            if let dimensions = imagePixelDimensions(at: path),
-               dimensions.width < 64 || dimensions.height < 64 {
+                  path.isEmpty == false,
+                  let data = try? Data(contentsOf: URL(fileURLWithPath: path), options: .alwaysMapped),
+                  ImageDecodeBudget.admitsDrawing(data) else { continue }
+            if let header = ImageDecodeBudget.header(of: data),
+               header.width < 64 || header.height < 64 {
                 continue
             }
             return path
         }
         return nil
-    }
-
-    /// Reads source metadata without decoding the bitmap. Unknown/vector image
-    /// geometry preserves the existing behavior and remains eligible.
-    nonisolated private static func imagePixelDimensions(at path: String) -> (width: Int, height: Int)? {
-        let options: [CFString: Any] = [kCGImageSourceShouldCache: false]
-        guard let source = CGImageSourceCreateWithURL(
-            URL(fileURLWithPath: path) as CFURL,
-            options as CFDictionary
-        ),
-        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
-        let width = properties[kCGImagePropertyPixelWidth] as? Int,
-        let height = properties[kCGImagePropertyPixelHeight] as? Int else {
-            return nil
-        }
-        return (width, height)
     }
 
     nonisolated private static func attentionInput(

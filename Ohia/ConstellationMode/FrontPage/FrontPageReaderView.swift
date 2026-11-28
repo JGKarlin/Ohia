@@ -18,6 +18,9 @@ struct FrontPageReaderView: View {
     /// takeover has had a chance to paint. The controller moves the expensive
     /// RFC-header graph lookup into a private SwiftData context.
     let loadReaderPayload: @MainActor (UUID) async -> FrontPageReaderPayload
+    /// Re-reads the article's attachments, off the main actor, for the live
+    /// Attachments catalog (`refreshAttachmentsOnCompletion`).
+    let loadReaderAttachments: @MainActor (UUID) async -> [LockedAttachmentSummary]
     let onRequestSummary: (String, OnDemandSummaryScope) -> Void
     let onBack: () -> Void
     /// Per-message action closures driving reader context actions and automatic
@@ -31,8 +34,9 @@ struct FrontPageReaderView: View {
 
     @State private var content: ReaderContent = .loading
     @State private var classificationPickerShown = false
-    /// Attachments on the focused article, loaded on focus. Drives the
-    /// Attachments rail (wide windows) and end-of-story dossier (narrow).
+    /// Attachments on the focused article, loaded on focus and re-read as
+    /// background jobs change them (`refreshAttachmentsOnCompletion`).
+    /// Drives the end-of-story Attachments catalog.
     @State private var attachments: [LockedAttachmentSummary] = []
     /// To/Cc/Bcc metadata for the focused message, resolved from the same
     /// SwiftData fetch that supplies the reader's thread context.
@@ -112,6 +116,27 @@ struct FrontPageReaderView: View {
             markReadOnFocusIfNeeded()
             requestSummaryIfNeeded()
             await resolveContent(threadContext: payload.threadContext)
+        }
+        .task(id: article.id) {
+            await refreshAttachmentsOnCompletion()
+        }
+    }
+
+    /// Keeps the Attachments catalog live while the article is open, as the
+    /// locked node's list is: each completed job that can change it
+    /// (`AttachmentCatalogRefresh`) re-reads the article's attachments, and
+    /// the catalog takes them only when they changed, so the reader's scroll
+    /// position and body stay as they are. The cancellation check after the
+    /// read keeps a re-read for an article the reader has left from landing
+    /// on the next one.
+    private func refreshAttachmentsOnCompletion() async {
+        guard let broadcaster = appServices?.jobCompletionBroadcaster else { return }
+        let messageID = article.id
+        for await event in broadcaster.events() {
+            guard !attachments.isEmpty, AttachmentCatalogRefresh.requiresReload(after: event) else { continue }
+            let latest = await loadReaderAttachments(messageID)
+            guard !Task.isCancelled, AttachmentCatalogRefresh.accepts(latest, over: attachments) else { continue }
+            attachments = latest
         }
     }
 

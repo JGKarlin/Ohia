@@ -14,7 +14,16 @@ public final class Attachment {
     public var extractionMetadataPath: String?
     public var ragDocumentPath: String?
     public var extractionMethod: String?
+    /// The `DocumentKind` the last text extraction recorded.
     public var detectedDocumentKind: String?
+    /// The `DocumentKind` raw value the MIME type and filename declare,
+    /// stored when the row is created, so the extraction workers' store
+    /// predicates compare this column instead of matching strings. Nil only
+    /// on a row created before the column existed; the extraction workers
+    /// classify such rows a batch at a time before each pending fetch
+    /// (`classifyUnclassified`), and any they visit first
+    /// (`classifyDeclaredKinds`).
+    public var declaredDocumentKind: String?
     public var extractionStatus: String?
     public var extractionFailureReason: String?
     public var extractionParserVersion: String?
@@ -58,6 +67,13 @@ public final class Attachment {
     public var visualOCRCharacterCount: Int?
     public var visualClassificationCount: Int?
     public var visualObjectCount: Int?
+    /// Visual extractions run for the stored parser version, counted for the
+    /// retry schedule `AttachmentExtractionRetryPolicy` sets.
+    public var visualExtractionAttemptCount: Int?
+    /// When the visual extraction runs again because the image's text could
+    /// not be read (text recognition was temporarily unavailable); nil when
+    /// no retry is due.
+    public var visualExtractionNextRetryAt: Date?
     /// Three-sentence reader-facing paragraph for the locked-node attachment
     /// pane. Generated after text or visual evidence extraction completes,
     /// and reused by on-demand expansion when present.
@@ -101,11 +117,57 @@ public final class Attachment {
         self.filename = filename
         self.mimeType = mimeType
         self.sizeBytes = sizeBytes
+        self.declaredDocumentKind = DocumentKind.detect(mimeType: mimeType, filename: filename).rawValue
         self.embeddingStatus = .pending
     }
 }
 
 public extension Attachment {
+    /// The kind the MIME type and filename declare: the stored
+    /// `declaredDocumentKind`, or, on a row created before that column, the
+    /// kind they give now.
+    var declaredKind: DocumentKind {
+        declaredDocumentKind.flatMap(DocumentKind.init(rawValue:))
+            ?? DocumentKind.detect(mimeType: mimeType, filename: filename)
+    }
+
+    /// Stores `declaredKind` on each row that has no `declaredDocumentKind`
+    /// (one created before the column existed), so the store finds it by the
+    /// column from then on. True when any row was classified; the caller
+    /// saves.
+    @discardableResult
+    static func classifyDeclaredKinds(_ rows: [Attachment]) -> Bool {
+        var classified = false
+        for row in rows where row.declaredDocumentKind == nil {
+            row.declaredDocumentKind = row.declaredKind.rawValue
+            classified = true
+        }
+        return classified
+    }
+
+    /// The most rows `classifyUnclassified(in:)` classifies in one call.
+    /// SwiftData takes about 0.17 ms to save each changed row (measured on
+    /// an on-disk store: 100,000 rows in 17 s), so a batch holds the
+    /// caller's actor for about a tenth of a second.
+    static let classificationBatchSize = 500
+
+    /// Stores `declaredKind` on up to `limit` rows that have no
+    /// `declaredDocumentKind` (rows created before the column existed) and
+    /// saves them. True when such rows may remain: the batch was full. The
+    /// extraction workers call it before each pending fetch, whose
+    /// predicates compare the column, so a store from before the column is
+    /// classified a batch at a time instead of in one long hold of the
+    /// worker's main actor, and the workers report work pending until it is.
+    @MainActor
+    static func classifyUnclassified(in context: ModelContext, limit: Int = classificationBatchSize) throws -> Bool {
+        var descriptor = FetchDescriptor<Attachment>(predicate: #Predicate { $0.declaredDocumentKind == nil })
+        descriptor.fetchLimit = limit
+        let rows = try context.fetch(descriptor)
+        guard classifyDeclaredKinds(rows) else { return false }
+        try context.save()
+        return rows.count == limit
+    }
+
     func clearAttachmentSummary() {
         attachmentSummary = nil
         attachmentSummaryGeneratedAt = nil

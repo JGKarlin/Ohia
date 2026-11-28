@@ -1,4 +1,5 @@
 import Foundation
+import OhiaCore
 import OhiaIngest
 import OhiaML
 import OhiaScheduler
@@ -36,11 +37,19 @@ struct LockedAttachmentExtractionStatus: Equatable {
         case stalled(String?)
         /// An iCloud Mail Drop file: no local bytes, a link until `expiresAt`.
         case mailDrop(expiresAt: Date?, expired: Bool)
+        /// The text could not be read for now; `queue`'s worker tries again
+        /// at `at`. An image or a scanned document may have its description
+        /// or part of its text meanwhile (`hasPayload`).
+        case willRetry(LockedAttachmentExtractionQueue, at: Date, isImage: Bool, hasPayload: Bool)
     }
 
     let state: State
 
     nonisolated var badge: Badge? {
+        badge(now: Date())
+    }
+
+    nonisolated func badge(now: Date) -> Badge? {
         switch state {
         case .ready:
             return nil
@@ -130,7 +139,67 @@ struct LockedAttachmentExtractionStatus: Equatable {
                 help: fullDate.map { "Stored on iCloud by the sender's Mail Drop. The link opens the file until \($0)." }
                     ?? "Stored on iCloud by the sender's Mail Drop. The link opens the file."
             )
+        case .willRetry(_, let at, let isImage, let hasPayload):
+            let subject: String
+            if isImage {
+                subject = "The text in this image could not be read yet."
+            } else if hasPayload {
+                subject = "This document's text could not be read in full yet."
+            } else {
+                subject = "This document's text could not be read yet."
+            }
+            // "After": the retry runs once its time has come and the
+            // scheduler takes it, and the help is not redrawn as the clock
+            // passes, so a time already gone stays true.
+            let when = Calendar.autoupdatingCurrent.isDate(at, inSameDayAs: now)
+                ? at.formatted(date: .omitted, time: .shortened)
+                : at.formatted(date: .abbreviated, time: .shortened)
+            return Badge(
+                label: "will retry",
+                tone: .pending,
+                help: "\(subject) It will be tried again after \(when)."
+            )
         }
+    }
+
+    /// What a worker tick for `queue` did to the attachments that were
+    /// waiting for its retry, from their snapshots before (`current`) and
+    /// re-read after (`fresh`). A retry ran when the attachment's scheduled
+    /// time for `queue` changed: every attempt rewrites it, to the next
+    /// time or to none. `reload` read something new (text, description,
+    /// status) and needs the lock's context rebuilt; `swap` only moved or
+    /// ended its schedule and is replaced in place. Any other change, such
+    /// as a summary saved meanwhile, is not a retry.
+    nonisolated static func retryOutcomes(
+        current: [LockedAttachmentSummary],
+        fresh: [UUID: LockedAttachmentSummary],
+        queue: LockedAttachmentExtractionQueue
+    ) -> (reload: [LockedAttachmentSummary], swap: [LockedAttachmentSummary]) {
+        func retryAt(_ attachment: LockedAttachmentSummary) -> Date? {
+            switch queue {
+            case .visual: attachment.visualRetryAt
+            case .document: attachment.textRetryAt
+            }
+        }
+        var reload: [LockedAttachmentSummary] = []
+        var swap: [LockedAttachmentSummary] = []
+        for attachment in current {
+            guard retryAt(attachment) != nil,
+                  let latest = fresh[attachment.id],
+                  retryAt(latest) != retryAt(attachment) else { continue }
+            let sameExtraction = latest.extractedTextPath == attachment.extractedTextPath
+                && latest.extractionCharacterCount == attachment.extractionCharacterCount
+                && latest.extractionStatus == attachment.extractionStatus
+                && latest.visualSummary == attachment.visualSummary
+                && latest.visualOCRCharacterCount == attachment.visualOCRCharacterCount
+                && latest.visualExtractionStatus == attachment.visualExtractionStatus
+            if sameExtraction {
+                swap.append(latest)
+            } else {
+                reload.append(attachment)
+            }
+        }
+        return (reload, swap)
     }
 
     nonisolated var pendingQueue: LockedAttachmentExtractionQueue? {
@@ -144,6 +213,10 @@ struct LockedAttachmentExtractionStatus: Equatable {
             return .ready
         case .queued:
             return .extracting
+        case .willRetry(_, _, _, let hasPayload):
+            // What the popups make of it is unchanged: they summarize what
+            // was read so far, or have nothing to summarize yet.
+            return hasPayload ? .ready : .unavailable
         case .waitingForAppleIntelligence:
             return .waitingForAppleIntelligence
         case .unsupported, .mailDrop:
@@ -165,14 +238,30 @@ struct LockedAttachmentExtractionStatus: Equatable {
                 state: .mailDrop(expiresAt: attachment.remoteExpiresAt, expired: expired)
             )
         }
-        if hasExtractedPayload(attachment) {
-            return LockedAttachmentExtractionStatus(state: .ready)
-        }
-
         let kind = DocumentKind.detect(
             mimeType: attachment.mimeType,
             filename: attachment.filename
         )
+
+        // Checked before the payload: an image or a scanned document keeps
+        // its description while the text in it waits for another attempt.
+        // Not when the worker will not in fact retry: the saved file is
+        // missing, or, for the visual worker, Apple Intelligence is
+        // unavailable, which it records instead.
+        let visualRetryAt = appleIntelligenceAvailable ? attachment.visualRetryAt : nil
+        if let retryAt = [visualRetryAt, attachment.textRetryAt].compactMap({ $0 }).min(),
+           !attachmentMissingFromDisk(attachment, fileExists: fileExists) {
+            return LockedAttachmentExtractionStatus(state: .willRetry(
+                visualRetryAt == retryAt ? .visual : .document,
+                at: retryAt,
+                isImage: kind == .image,
+                hasPayload: hasExtractedPayload(attachment)
+            ))
+        }
+
+        if hasExtractedPayload(attachment) {
+            return LockedAttachmentExtractionStatus(state: .ready)
+        }
 
         if kind == .image {
             return classifyImage(

@@ -1000,7 +1000,7 @@ enum OhiaStoreCompatibilityError: Error, Equatable, LocalizedError {
 enum OhiaStoreCompatibilityGate {
     // Advance this value whenever OhiaSchema changes. A schema-changing build
     // with the same generation is rejected before SwiftData can open the store.
-    static let currentGeneration = 2026100701
+    static let currentGeneration = 2026112702
 
     static func marker(for schema: Schema) -> OhiaStoreCompatibilityMarker {
         OhiaStoreCompatibilityMarker(
@@ -2778,15 +2778,9 @@ struct RootView: View {
                 // broad data-change event reconciles every lens from the
                 // authoritative store; advancing the watermark prevents the
                 // same interval from triggering again on the next heartbeat.
-                services.jobCompletionBroadcaster.yield(JobCompletionEvent(
-                    type: .imapPollFolder,
-                    payload: nil,
-                    completedAt: fleet.updatedAt,
-                    messageMutations: [PipelineMessageMutation(
-                        messageIDs: [],
-                        facets: [.visibility]
-                    )]
-                ))
+                services.jobCompletionBroadcaster.yield(
+                    .fullReconciliation(completedAt: fleet.updatedAt)
+                )
             }
             for completion in result.completions {
                 guard let event = completion.jobCompletionEvent else {

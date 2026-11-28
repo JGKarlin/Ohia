@@ -86,12 +86,12 @@ public enum ComposerContentPipeline {
         let recorder = ComposerStageRecorder()
         let call: ComposerModelCall = { prompt, role, maximumTokens in
             try action.check()
-            let started = Date()
+            let started = action.now()
             do {
                 let result = try await generate(prompt, role, maximumTokens)
                 try action.check()
                 await recorder.append(ComposerPipelineStage(role: role, scope: role.scope,
-                    promptTokens: result.diagnostics?.promptTokenCount, elapsed: Date().timeIntervalSince(started),
+                    promptTokens: result.diagnostics?.promptTokenCount, elapsed: action.now().timeIntervalSince(started),
                     completed: result.completed, error: nil,
                     reusedPromptTokens: result.diagnostics?.reusedPromptTokenCount,
                     prefillSeconds: result.diagnostics?.promptSeconds,
@@ -100,7 +100,7 @@ public enum ComposerContentPipeline {
                 return result
             } catch {
                 await recorder.append(ComposerPipelineStage(role: role, scope: role.scope,
-                    promptTokens: nil, elapsed: Date().timeIntervalSince(started), completed: false,
+                    promptTokens: nil, elapsed: action.now().timeIntervalSince(started), completed: false,
                     error: String(describing: error)))
                 throw error
             }
@@ -147,7 +147,7 @@ public enum ComposerContentPipeline {
             attempt += 1
             let last = attempt == writerDrawCount - 1
             let role: ComposerModelRole = attempt == 0 ? .writer : (last && broke ? .baseWriter : .writerRetry)
-            let started = Date()
+            let started = action.now()
             let output: ComposerModelOutput
             // Whether this draw is told why the last was turned down: the
             // note takes room the fitted prompt left the email.
@@ -215,7 +215,7 @@ public enum ComposerContentPipeline {
             } catch ComposerContentError.rejected(let reason)
                 where [Self.nothingAuthorized, Self.nothingNew].contains(reason) && leftOut.isEmpty
                     && attempt + 1 < writerDrawCount
-                    && action.remainingSeconds >= Date().timeIntervalSince(started) + minimumSecondsForCheck {
+                    && action.remainingSeconds >= action.now().timeIntervalSince(started) + minimumSecondsForCheck {
                 // Nothing of the author's was left once what they never said
                 // went: another draw, told so, may say only what they gave.
                 // The author is asked only when every draw ends that way.
@@ -254,7 +254,7 @@ public enum ComposerContentPipeline {
                 // Another draw after an answer was left out needs the time
                 // this one took, and the check's: without it, the author is
                 // told which answer now rather than the action running out.
-                if !leftOut.isEmpty, action.remainingSeconds < Date().timeIntervalSince(started) + minimumSecondsForCheck {
+                if !leftOut.isEmpty, action.remainingSeconds < action.now().timeIntervalSince(started) + minimumSecondsForCheck {
                     break
                 }
                 try action.check()
@@ -780,7 +780,7 @@ public enum ComposerContentPipeline {
     /// cancelled, or the action's token was before its deadline passed.
     static func rethrowingUserCancellation(_ error: Error?, action: ComposerGenerationAction) throws {
         if let error = error as? CancellationError { throw error }
-        if Task.isCancelled || (action.cancellation.isCancelled && Date() < action.deadline) {
+        if Task.isCancelled || (action.cancellation.isCancelled && !action.isPastDeadline) {
             throw CancellationError()
         }
     }

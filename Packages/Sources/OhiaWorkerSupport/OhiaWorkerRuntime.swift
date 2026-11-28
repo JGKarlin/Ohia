@@ -39,17 +39,24 @@ enum ActiveGenerationTaskMonitor {
         now: @escaping @Sendable () -> Date = { Date() },
         shouldCancel: @escaping @Sendable () async -> Bool
     ) async throws -> Value {
-        try await withThrowingTaskGroup(of: Value.self) { group in
+        // The request's deadline is a Dispatch timer, not a check in the poll
+        // below: the decode holds a Swift concurrency thread, and a polling
+        // task waits behind it, and behind any other blocking work, past the
+        // deadline. Cancel commands are still polled: they are read through
+        // the runtime actor, which needs a task thread to receive them.
+        let expiry = deadline.map { deadline in
+            GenerationDeadlineTimer(deadline: deadline, now: now) {
+                cancellation.cancel()
+                generationTask.cancel()
+            }
+        }
+        defer { expiry?.cancel() }
+        return try await withThrowingTaskGroup(of: Value.self) { group in
             group.addTask {
                 try await generationTask.value
             }
             group.addTask {
                 while !Task.isCancelled {
-                    if let deadline, now() >= deadline {
-                        cancellation.cancel()
-                        generationTask.cancel()
-                        throw CancellationError()
-                    }
                     if await shouldCancel() {
                         cancellation.cancel()
                         generationTask.cancel()
@@ -64,6 +71,8 @@ enum ActiveGenerationTaskMonitor {
                 guard let value = try await group.next() else {
                     throw CancellationError()
                 }
+                // A decode stopped by the deadline may return what it had.
+                try cancellation.checkCancellation()
                 group.cancelAll()
                 return value
             } catch {

@@ -12,45 +12,6 @@ enum ComposerPersistence {
     }
 }
 
-@MainActor
-enum ComposerDiscardTransaction {
-    static func insertedSyncJobIDs(in context: ModelContext) -> Set<UUID> {
-        Set(insertedSyncJobs(in: context).map(\.id))
-    }
-
-    static func removeSyncJobsInserted(
-        after preexistingInsertedJobIDs: Set<UUID>,
-        context: ModelContext
-    ) {
-        for job in insertedSyncJobs(in: context)
-            where !preexistingInsertedJobIDs.contains(job.id) {
-            context.delete(job)
-        }
-    }
-
-    static func reinsertIfDeleted(_ draft: Draft, context: ModelContext) {
-        guard context.deletedModelsArray.contains(where: { ($0 as? Draft) === draft }) else {
-            return
-        }
-        context.insert(draft)
-        context.processPendingChanges()
-    }
-
-    static func reinsertIfDeleted(_ revision: DraftRevision, context: ModelContext) {
-        guard context.deletedModelsArray.contains(where: { ($0 as? DraftRevision) === revision }) else {
-            return
-        }
-        context.insert(revision)
-        context.processPendingChanges()
-    }
-
-    private static func insertedSyncJobs(in context: ModelContext) -> [Job] {
-        context.insertedModelsArray.compactMap { $0 as? Job }.filter {
-            $0.type == .syncComposerDrafts
-        }
-    }
-}
-
 /// Identifies one in-flight draft-asset import for a specific draft.
 /// The owner id is captured before copying begins and must still match a live
 /// pending draft when the copied paths are committed.

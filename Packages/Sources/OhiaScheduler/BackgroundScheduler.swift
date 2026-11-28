@@ -134,7 +134,16 @@ private actor DurableComposerJobCancellationMonitor {
         self.container = container
     }
 
+    /// The job's own reads, off the main actor.
     func cancellationEvidence(
+        for target: ComposerJobCancellationTarget
+    ) throws -> ComposerJobCancellationEvidence {
+        try polledCancellationEvidence(for: target)
+    }
+
+    /// Reads only the store, through a context of its own, so it runs on
+    /// whatever thread calls it: the cancellation poll's Dispatch queue.
+    nonisolated func polledCancellationEvidence(
         for target: ComposerJobCancellationTarget
     ) throws -> ComposerJobCancellationEvidence {
         let context = ModelContext(container)
@@ -329,6 +338,42 @@ private actor DurableComposerJobCancellationMonitor {
         draft.revisions = []
         draft.baseRevisionID = nil
     }
+}
+
+/// Repeats a Composer job's cancellation check on a Dispatch timer until the
+/// check reports it cancelled the job, or the poll is stopped. Not a Swift
+/// task: the job runs synchronous model calls that hold Swift concurrency
+/// threads, and a polling task would wait behind them, and behind any other
+/// blocking work, while a deleted draft's generation ran on.
+final class ComposerJobCancellationPoll: Sendable {
+    private let queue = DispatchQueue(
+        label: "org.jgkarlin.Ohia.composer-job-cancellation",
+        qos: .userInitiated
+    )
+    private let timer: any DispatchSourceTimer
+
+    init(interval: DispatchTimeInterval, check: @escaping @Sendable () -> Bool) {
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        self.timer = timer
+        timer.setEventHandler { [weak timer] in
+            if check() { timer?.cancel() }
+        }
+        timer.schedule(deadline: .now(), repeating: interval, leeway: .milliseconds(10))
+        timer.resume()
+    }
+
+    /// Stops further checks without waiting for one in progress.
+    func cancel() { timer.cancel() }
+
+    /// Stops further checks; when it returns, none is running.
+    func stop() async {
+        timer.cancel()
+        await withCheckedContinuation { finished in
+            queue.async { finished.resume() }
+        }
+    }
+
+    deinit { timer.cancel() }
 }
 
 private final class ComposerJobCancellationRace: @unchecked Sendable {
@@ -2954,21 +2999,14 @@ public final class BackgroundScheduler: @unchecked Sendable {
                 resourceDecision: resourceDecision
             )
         }
-        let monitor = Task.detached(priority: .userInitiated) {
-            while !Task.isCancelled {
-                do {
-                    let evidence = try await storeMonitor.cancellationEvidence(for: target)
-                    if race.requestCancellation(evidence) {
-                        Self.cancelEngineWork(for: target, engine: engine)
-                        operation.cancel()
-                        return
-                    }
-                } catch {
-                    // A transient store read failure is not user intent.
-                    // Retry the narrow authoritative fetch on the next poll.
-                }
-                try? await Task.sleep(for: .milliseconds(50))
-            }
+        let monitor = ComposerJobCancellationPoll(interval: .milliseconds(50)) {
+            // A transient store read failure is not user intent. The next
+            // check retries the narrow authoritative fetch.
+            guard let evidence = try? storeMonitor.polledCancellationEvidence(for: target),
+                  race.requestCancellation(evidence) else { return false }
+            Self.cancelEngineWork(for: target, engine: engine)
+            operation.cancel()
+            return true
         }
 
         do {
@@ -2982,8 +3020,7 @@ public final class BackgroundScheduler: @unchecked Sendable {
             if let evidence = try? await storeMonitor.cancellationEvidence(for: target) {
                 _ = race.requestCancellation(evidence)
             }
-            monitor.cancel()
-            await monitor.value
+            await monitor.stop()
             let cancellationEvidence = race.finish()
             if !cancellationEvidence.isEmpty {
                 context.rollback()
@@ -2997,8 +3034,7 @@ public final class BackgroundScheduler: @unchecked Sendable {
             if let evidence = try? await storeMonitor.cancellationEvidence(for: target) {
                 _ = race.requestCancellation(evidence)
             }
-            monitor.cancel()
-            await monitor.value
+            await monitor.stop()
             let cancellationEvidence = race.finish()
             if !cancellationEvidence.isEmpty {
                 context.rollback()

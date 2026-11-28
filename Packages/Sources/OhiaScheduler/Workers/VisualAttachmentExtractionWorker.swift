@@ -3,6 +3,7 @@ import SwiftData
 import OhiaCore
 import OhiaIngest
 import OhiaML
+import OhiaPDFParsing
 
 enum LegacyVisualAttachmentAnalysisPipeline {
     typealias Summarizer = @Sendable (
@@ -100,14 +101,17 @@ public final class VisualAttachmentExtractionWorker: @unchecked Sendable {
         profile: AppleIntelligenceModelProfile
     ) -> Bool {
         let parserVersion = profile.parserVersion
-        let descriptor = FetchDescriptor<Attachment>(
-            predicate: #Predicate<Attachment> { attachment in
-                attachment.visualExtractionParserVersion != parserVersion
-                    || (attachment.visualExtractionStatus == nil && attachment.visualExtractionMethod == nil)
-            }
-        )
-        let attachments = (try? context.fetch(descriptor)) ?? []
-        return attachments.contains { isPendingExtractionCandidate($0, parserVersion: parserVersion) }
+        let candidates: PendingCandidates
+        do {
+            candidates = try fetchPendingCandidates(context: context, parserVersion: parserVersion)
+        } catch {
+            print("[Ohia] visual extraction pending check failed errorKind=\(String(reflecting: type(of: error)))")
+            return false
+        }
+        // Rows from before `Attachment.declaredDocumentKind` that remain
+        // unclassified may be images: work is pending until they are not.
+        return candidates.unclassifiedRemain
+            || candidates.rows.contains { isPendingExtractionCandidate($0, parserVersion: parserVersion) }
     }
 
     @MainActor
@@ -148,13 +152,7 @@ public final class VisualAttachmentExtractionWorker: @unchecked Sendable {
         context: ModelContext,
         parserVersion: String
     ) throws -> [Message] {
-        let descriptor = FetchDescriptor<Attachment>(
-            predicate: #Predicate<Attachment> { attachment in
-                attachment.visualExtractionParserVersion != parserVersion
-                    || (attachment.visualExtractionStatus == nil && attachment.visualExtractionMethod == nil)
-            }
-        )
-        let pending = try context.fetch(descriptor)
+        let pending = try fetchPendingCandidates(context: context, parserVersion: parserVersion).rows
 
         var seen = Set<UUID>()
         var messages: [Message] = []
@@ -178,6 +176,8 @@ public final class VisualAttachmentExtractionWorker: @unchecked Sendable {
     ) async throws -> MessageOutcome {
         var extracted = 0
         var terminal = 0
+        // Saved with the message's results below.
+        Attachment.classifyDeclaredKinds(message.attachments)
 
         for attachment in message.attachments {
             guard Self.isPendingExtractionCandidate(
@@ -240,6 +240,21 @@ public final class VisualAttachmentExtractionWorker: @unchecked Sendable {
                 continue
             }
 
+            // Every analysis decodes the image in this process or the parser
+            // service; one whose decode would need more than the budget is
+            // refused from its header before any pixel is decoded.
+            if let header = ImageDecodeBudget.header(ofFileAt: URL(fileURLWithPath: reference.filePath)),
+               !header.fits() {
+                attachment.applyVisualExtractionResult(.failure(
+                    status: .tooLarge,
+                    method: profile.visualExtractionMethod,
+                    failureReason: "The image is \(header.width) by \(header.height) pixels, more than \(ImageDecodeBudget.maxDecodedBytes) bytes to decode",
+                    parserVersion: profile.parserVersion
+                ))
+                terminal += 1
+                continue
+            }
+
             var result: VisualAttachmentExtractionResult
             do {
                 result = try await extractionRunner(reference, profile) ?? .failure(
@@ -295,7 +310,8 @@ public final class VisualAttachmentExtractionWorker: @unchecked Sendable {
                             status: .parseFailed,
                             method: profile.visualExtractionMethod,
                             failureReason: reason,
-                            parserVersion: profile.parserVersion
+                            parserVersion: profile.parserVersion,
+                            textRecognitionUnavailable: result.textRecognitionUnavailable
                         )
                 }
             }
@@ -344,15 +360,72 @@ public final class VisualAttachmentExtractionWorker: @unchecked Sendable {
         )
     }
 
+    /// The store's side of `isPendingExtractionCandidate`: attachments with
+    /// a file whose stored kind is an image, and that were never extracted,
+    /// were extracted by another parser version or by none, or have a retry
+    /// scheduled. A row created before `Attachment.declaredDocumentKind`
+    /// existed is fetched once `Attachment.classifyUnclassified` has stored
+    /// its kind, which `fetchPendingCandidates` runs first.
+    ///
+    /// It compares columns only: no string operator runs per row, so the
+    /// fetch costs the same whatever the locale, and an attachment that is
+    /// not an image, which is never given a visual status or method and
+    /// would otherwise look never extracted, is left in the store rather
+    /// than loaded on the main actor on every pass. The store's `!=` follows
+    /// SQL and does not match a row whose value is missing, where Swift's
+    /// does, so a missing parser version is matched explicitly, and the
+    /// predicate admits every classified row `isPendingExtractionCandidate`
+    /// picks.
+    static func pendingCandidates(parserVersion: String) -> Predicate<Attachment> {
+        typealias Store = AttachmentStorePredicate
+        return Predicate<Attachment> { row in
+            Store.all(
+                Store.column(row, \.filePath, isNot: nil),
+                Store.column(row, \.declaredDocumentKind, is: DocumentKind.image.rawValue),
+                Store.any(
+                    Store.column(row, \.visualExtractionParserVersion, isNot: parserVersion),
+                    Store.column(row, \.visualExtractionParserVersion, is: nil),
+                    Store.all(
+                        Store.column(row, \.visualExtractionStatus, is: nil),
+                        Store.column(row, \.visualExtractionMethod, is: nil)
+                    ),
+                    Store.column(row, \.visualExtractionNextRetryAt, isNot: nil)
+                )
+            )
+        }
+    }
+
+    private struct PendingCandidates {
+        let rows: [Attachment]
+        /// Rows from before `Attachment.declaredDocumentKind` remain
+        /// unclassified, outside the fetch until a later batch.
+        let unclassifiedRemain: Bool
+    }
+
+    /// The rows the store returns for `pendingCandidates`, after a batch of
+    /// rows without a stored kind is classified and saved
+    /// (`Attachment.classifyUnclassified`).
+    @MainActor
+    private static func fetchPendingCandidates(context: ModelContext, parserVersion: String) throws -> PendingCandidates {
+        let unclassifiedRemain = try Attachment.classifyUnclassified(in: context)
+        let rows = try context.fetch(FetchDescriptor<Attachment>(predicate: pendingCandidates(parserVersion: parserVersion)))
+        return PendingCandidates(rows: rows, unclassifiedRemain: unclassifiedRemain)
+    }
+
+    /// An image never extracted, extracted by another parser version, or
+    /// whose text could not be read last time and whose retry is due
+    /// (`Attachment.applyVisualExtractionResult`).
     private static func isPendingExtractionCandidate(
         _ attachment: Attachment,
-        parserVersion: String
+        parserVersion: String,
+        now: Date = Date()
     ) -> Bool {
-        guard reference(for: attachment)?.isImageLike == true else { return false }
+        guard reference(for: attachment) != nil, attachment.declaredKind == .image else { return false }
         let needsInitialExtraction = attachment.visualExtractionStatus == nil
             && attachment.visualExtractionMethod == nil
         let needsVersionRepair = attachment.visualExtractionParserVersion != parserVersion
-        return needsInitialExtraction || needsVersionRepair
+        let retryIsDue = AttachmentExtractionRetryPolicy.scheduledVisualRetry(of: attachment).map { $0 <= now } ?? false
+        return needsInitialExtraction || needsVersionRepair || retryIsDue
     }
 
     @MainActor
@@ -572,13 +645,15 @@ public final class VisualAttachmentExtractionWorker: @unchecked Sendable {
 #if compiler(>=6.4)
             if #available(macOS 27.0, *) {
                 do {
-                    guard let analysis = try await AppleMultimodalVisualAttachmentAnalyzer()
-                        .analyze(reference: reference) else {
+                    let analysis = try await AppleMultimodalVisualAttachmentAnalyzer()
+                        .analyze(reference: reference)
+                    guard let analysis, analysis.hasSignals else {
                         return .failure(
                             status: .emptyEvidence,
                             method: profile.visualExtractionMethod,
                             failureReason: "Apple Foundation Models produced no visual analysis",
-                            parserVersion: profile.parserVersion
+                            parserVersion: profile.parserVersion,
+                            textRecognitionUnavailable: analysis?.textRecognitionUnavailable == true
                         )
                     }
                     let evidenceJSON = try String(
@@ -620,15 +695,16 @@ public final class VisualAttachmentExtractionWorker: @unchecked Sendable {
         parserVersion: String
     ) async throws -> VisualAttachmentExtractionResult? {
 
-        let evidence = try await Task.detached(priority: .utility) {
+        let evidence = try await PDFParserBlockingCall.run(priority: .utility) { () throws -> VisualAttachmentEvidence? in
             try VisualAttachmentEvidenceExtractor.extract(from: reference)
-        }.value
-        guard let evidence else {
+        }
+        guard let evidence, evidence.hasSignals else {
             return .failure(
                 status: .emptyEvidence,
                 method: .appleVisionFoundationModelsLegacy,
                 failureReason: "Apple Vision produced no reliable visual evidence",
-                parserVersion: parserVersion
+                parserVersion: parserVersion,
+                textRecognitionUnavailable: evidence?.textRecognitionUnavailable == true
             )
         }
 

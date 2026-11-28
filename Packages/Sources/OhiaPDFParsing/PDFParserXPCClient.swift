@@ -55,20 +55,45 @@ public final class PDFParserXPCClient: Sendable {
         }
     }
 
+    /// Recognizes the text in one image in the service, waiting the same way
+    /// as `parse`, up to the recognition time plus a launch margin. A
+    /// `.recognizerUnavailable` reply is acknowledged, so the broken service
+    /// stops waiting on this connection, and returned once that process has
+    /// exited (or `brokenServiceExitWait` has passed), so a retry reaches a
+    /// fresh process. A task cancelled during that wait gets `.cancelled`.
+    public func recognizeText(_ image: Data) -> TextRecognitionReply {
+        request(
+            timeout: PDFParserLimits.textRecognitionClientTimeout,
+            unavailable: TextRecognitionReply(outcome: .serviceUnavailable),
+            cancelled: TextRecognitionReply(outcome: .cancelled),
+            timedOut: TextRecognitionReply(outcome: .timedOut),
+            releasesBrokenService: { $0.outcome == .recognizerUnavailable }
+        ) { parser, complete in
+            parser.recognizeText(image) { output, rawOutcome, detail in
+                complete(TextRecognitionReply(wireOutput: output, rawOutcome: rawOutcome, detail: detail))
+            }
+        }
+    }
+
     private func request<Reply: Sendable>(
         timeout: TimeInterval,
         unavailable: Reply,
         cancelled: Reply,
         timedOut: Reply,
+        releasesBrokenService: (Reply) -> Bool = { _ in false },
         send: (any PDFParserXPCProtocol, @escaping @Sendable (Reply) -> Void) -> Void
     ) -> Reply {
         let connection = NSXPCConnection(serviceName: Self.serviceIdentifier)
         connection.remoteObjectInterface = NSXPCInterface(with: PDFParserXPCProtocol.self)
         connection.setCodeSigningRequirement(Self.peerCodeSigningRequirement)
+        // Called when the service process exits or crashes, after any reply
+        // it sent on this connection.
+        let serviceExited = DispatchSemaphore(value: 0)
+        connection.interruptionHandler = { serviceExited.signal() }
         connection.resume()
         defer { connection.invalidate() }
 
-        return PDFParserWait.wait(
+        let reply = PDFParserWait.wait(
             timeout: timeout,
             unavailable: unavailable,
             cancelled: cancelled,
@@ -81,5 +106,36 @@ public final class PDFParserXPCClient: Sendable {
             }
             send(parser, complete)
         }
+        guard releasesBrokenService(reply) else { return reply }
+        let exit = Self.awaitBrokenServiceExit(serviceExited, timeout: PDFParserLimits.brokenServiceExitWait) {
+            let proxy = connection.remoteObjectProxyWithErrorHandler { _ in }
+            (proxy as? any PDFParserXPCProtocol)?.acknowledgeBrokenRecognizer()
+        }
+        switch exit {
+        case .signalled, .timedOut:
+            return reply
+        case .cancelled:
+            return cancelled
+        }
+    }
+
+    /// After a `.recognizerUnavailable` reply: acknowledges it with
+    /// `acknowledge` and waits, the way `PDFParserWait` does, for the broken
+    /// service process to exit, so that the caller's retry reaches a fresh
+    /// one. The acknowledgment can only follow the reply, and the service
+    /// retired before replying, so from then on this connection does not
+    /// hold the exit up: the service exits once every other open connection
+    /// has closed or is a watcher's, or at the drain limit. When the process
+    /// has already exited (the drain limit, an overrun, a crash), nothing is
+    /// sent: an acknowledgment would only launch a fresh service to deliver
+    /// a message it ignores.
+    static func awaitBrokenServiceExit(
+        _ serviceExited: DispatchSemaphore,
+        timeout: TimeInterval,
+        acknowledge: () -> Void
+    ) -> PDFParserWait.Signal {
+        if serviceExited.wait(timeout: .now()) == .success { return .signalled }
+        acknowledge()
+        return PDFParserWait.signal(serviceExited, timeout: timeout)
     }
 }

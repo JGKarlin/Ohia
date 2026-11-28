@@ -17,6 +17,7 @@ import Contacts
 import ScreenCaptureKit
 import OhiaIngest
 import OhiaML
+import OhiaPDFParsing
 
 // MARK: - Shared HTML → plain text
 
@@ -629,14 +630,18 @@ enum ScreenCaptureService {
         return data
     }
 
+    /// The screenshot's text, read in `OhiaPDFParser.xpc`. The wait for the
+    /// service runs off Swift's task threads (`PDFParserBlockingCall`), and
+    /// a cancelled capture stops waiting.
     private static func recognizeText(in pngData: Data) async throws -> String {
-        let text = await Task.detached(priority: .userInitiated) { () -> String in
+        let text = await PDFParserBlockingCall.run(priority: .userInitiated) { () -> String in
             ((try? AttachmentExtractor.extractText(
                 data: pngData,
                 mimeType: "image/png",
                 filename: "screenshot.png"
             )) ?? nil) ?? ""
-        }.value
+        }
+        try Task.checkCancellation()
         let snippet = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !snippet.isEmpty else { throw CaptureError.noContent }
         return String(snippet.prefix(4000))

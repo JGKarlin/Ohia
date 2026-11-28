@@ -1,9 +1,6 @@
 import Foundation
-
-#if canImport(Vision)
-import ImageIO
-import Vision
-#endif
+import OhiaCore
+import OhiaPDFParsing
 
 #if canImport(AppKit)
 import AppKit
@@ -330,78 +327,76 @@ public enum AttachmentExtractor {
 #endif
     }
 
-    private static func extractImage(data: Data, kind: DocumentKind) -> AttachmentExtractionResult {
-#if canImport(Vision)
-        do {
-            guard let (cgImage, orientation) = decodedImage(data) else {
-                return .failure(
-                    kind: kind,
-                    status: .parseFailed,
-                    method: .visionOCR,
-                    failureReason: "Could not decode image"
-                )
-            }
-
-            var lines: [String] = []
-            var capturedError: Error?
-
-            let request = VNRecognizeTextRequest { request, error in
-                if let error {
-                    capturedError = error
-                    return
-                }
-                let observations = request.results as? [VNRecognizedTextObservation] ?? []
-                for obs in observations {
-                    if let candidate = obs.topCandidates(1).first {
-                        lines.append(candidate.string)
-                    }
-                }
-            }
-            request.recognitionLevel = .accurate
-            // Vision picks the recognition model for each image. A fixed
-            // language list reads only scripts its first language's model
-            // covers, so text in any other script is lost.
-            request.automaticallyDetectsLanguage = true
-
-            let handler = VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:])
-            try handler.perform([request])
-
-            if let capturedError { throw capturedError }
-            let text = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !text.isEmpty else {
-                return .failure(kind: kind, status: .emptyText, method: .visionOCR)
-            }
-            return .completed(text: text, kind: kind, method: .visionOCR)
-        } catch {
+    /// Reads an image's text in `OhiaPDFParser.xpc`, through this process's
+    /// `PDFParserRoute`; the image is never decoded here. In a process with
+    /// no route (a test runner) the text is not read at all. A broken
+    /// recognizer or an unreachable service is retried once right away
+    /// (`ImageTextRecognition.recognize`). Failures that a later attempt could
+    /// fix (the service timed out, or unreachable or broken twice in a row)
+    /// are `.parseFailed`, the status `AttachmentExtractionRetryPolicy`
+    /// retries later; a service whose recognizer broke has exited by then, so
+    /// that retry runs in a fresh process. An image that does not decode, or
+    /// that Vision fails on, keeps its earlier `.parseFailed` outcome; one
+    /// without text is `.emptyText`; one too large, in bytes or pixels, is
+    /// `.tooLarge`.
+    static func extractImage(
+        data: Data,
+        kind: DocumentKind,
+        recognizeText: ImageTextRecognition.Recognize? = PDFParserRoute.current()?.recognizeText
+    ) -> AttachmentExtractionResult {
+        guard !data.isEmpty else {
+            return .failure(kind: kind, status: .parseFailed, method: .visionOCR, failureReason: "Could not decode image")
+        }
+        guard let recognizeText else {
             return .failure(
                 kind: kind,
                 status: .parseFailed,
                 method: .visionOCR,
-                failureReason: error.localizedDescription
+                failureReason: "The image text recognition service is not available in this process"
             )
         }
-#else
-        return .failure(
-            kind: kind,
-            status: .parseFailed,
-            method: .visionOCR,
-            failureReason: "Vision is unavailable"
-        )
-#endif
+        let reply = ImageTextRecognition.recognize(data, using: recognizeText)
+        switch reply.outcome {
+        case .recognized:
+            let text = reply.lines.map(\.text).joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else {
+                return .failure(kind: kind, status: .emptyText, method: .visionOCR)
+            }
+            return .completed(text: text, kind: kind, method: .visionOCR)
+        case .undecodable:
+            return .failure(kind: kind, status: .parseFailed, method: .visionOCR, failureReason: "Could not decode image")
+        case .failed:
+            return .failure(kind: kind, status: .parseFailed, method: .visionOCR, failureReason: reply.detail)
+        case .invalidRequest, .outputTooLarge:
+            return .failure(
+                kind: kind,
+                status: .tooLarge,
+                method: .visionOCR,
+                failureReason: "The image or its text exceeds the text recognition service's size limit"
+            )
+        case .recognizerUnavailable:
+            return .failure(
+                kind: kind,
+                status: .parseFailed,
+                method: .visionOCR,
+                failureReason: "Text recognition was unavailable in the parser service"
+            )
+        case .timedOut:
+            return .failure(kind: kind, status: .parseFailed, method: .visionOCR, failureReason: "Image text recognition timed out")
+        case .serviceUnavailable:
+            return .failure(
+                kind: kind,
+                status: .parseFailed,
+                method: .visionOCR,
+                failureReason: "The image text recognition service could not be reached"
+            )
+        case .cancelled:
+            return .failure(
+                kind: kind,
+                status: .parseFailed,
+                method: .visionOCR,
+                failureReason: "Image text recognition was cancelled before it finished"
+            )
+        }
     }
-
-#if canImport(Vision)
-    /// The first image in `data` and its EXIF orientation, decoded with
-    /// ImageIO, which reads every raster format but not PDF. NSImage is not
-    /// used: it would also open a PDF named like an image here, outside the
-    /// sandboxed PDF parser service.
-    private static func decodedImage(_ data: Data) -> (CGImage, CGImagePropertyOrientation)? {
-        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
-        let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
-        let orientation = (properties?[kCGImagePropertyOrientation] as? UInt32)
-            .flatMap(CGImagePropertyOrientation.init(rawValue:)) ?? .up
-        return (image, orientation)
-    }
-#endif
 }

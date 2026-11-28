@@ -1192,13 +1192,11 @@ struct FrontPageArticleImage: View {
         naturalHeight = 0
         didFail = false
         onPresentationHeightChange(baseHeight)
-        // Read bytes off-main (`Data` is Sendable); build the non-Sendable
-        // `NSImage` back on the main actor to satisfy strict concurrency.
-        let data = await Task.detached(priority: .userInitiated) { () -> Data? in
-            try? Data(contentsOf: URL(fileURLWithPath: target))
-        }.value
+        // Read off-main and admitted by its bytes (`AttachmentPreviewImage`);
+        // the non-Sendable `NSImage` is built back on the main actor.
+        let loaded = await AttachmentPreviewImage.load(path: target)
         if Task.isCancelled { return }
-        if let data, let loaded = NSImage(data: data) {
+        if let loaded {
             image = loaded
             let geometry = Self.pixelGeometry(of: loaded)
             pixelWidth = geometry.width

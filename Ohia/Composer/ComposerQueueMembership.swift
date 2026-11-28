@@ -81,18 +81,17 @@ enum ComposerQueueMembership {
                 context: context
             ) != nil
         let draftForMutation = resolvedDraft(for: message, context: context)
-        let pendingTargetedDraftJobs = needsReply
-            ? []
-            : try pendingTargetedDraftJobs(for: message.id, context: context)
-        let mutationSnapshot = MutationSnapshot(message: message, draft: draftForMutation)
-        let preexistingInsertedSyncJobIDs = ComposerDiscardTransaction.insertedSyncJobIDs(
-            in: context
-        )
+        // Pending edits commit first, so when the mutation's save fails the
+        // mutation is the context's only pending change and `rollback()`
+        // reverts exactly it from the store. Undoing it by hand is not a
+        // restore: re-inserting a deleted draft can list a revision twice,
+        // and the re-inserted draft drops out of change tracking, so edits
+        // restored onto it were never written.
+        try saveContext(context)
         var cleanupOwnerIDs: Set<UUID> = []
-        var cachedPreparation: ReplySourcePreparation?
         do {
             if !needsReply, let draft = draftForMutation, draft.status == .pending {
-                cachedPreparation = try DraftGenerationOrchestrator.cacheReplyPreparationIfCurrent(
+                _ = try DraftGenerationOrchestrator.cacheReplyPreparationIfCurrent(
                     from: draft, context: context
                 )
             }
@@ -147,19 +146,13 @@ enum ComposerQueueMembership {
                    ) {
                     cleanupOwnerIDs.insert(ownerID)
                 }
-                for job in pendingTargetedDraftJobs {
+                for job in try pendingTargetedDraftJobs(for: message.id, context: context) {
                     context.delete(job)
                 }
                 try saveContext(context)
             }
         } catch {
-            if let cachedPreparation { context.delete(cachedPreparation) }
-            mutationSnapshot.restore(message: message, context: context)
-            restoreDeletedJobs(pendingTargetedDraftJobs, context: context)
-            ComposerDiscardTransaction.removeSyncJobsInserted(
-                after: preexistingInsertedSyncJobIDs,
-                context: context
-            )
+            context.rollback()
             throw error
         }
 
@@ -248,18 +241,6 @@ enum ComposerQueueMembership {
             jobsByID[job.id] = job
         }
         return Array(jobsByID.values)
-    }
-
-    private static func restoreDeletedJobs(_ jobs: [Job], context: ModelContext) {
-        var restoredAny = false
-        for job in jobs
-            where context.deletedModelsArray.contains(where: { ($0 as? Job) === job }) {
-            context.insert(job)
-            restoredAny = true
-        }
-        if restoredAny {
-            context.processPendingChanges()
-        }
     }
 
     /// Enqueues a user-initiated `.generateDraft` job targeted at one
@@ -444,139 +425,5 @@ enum ComposerQueueMembership {
         }
         draft.revisions = []
         draft.baseRevisionID = nil
-    }
-
-    private struct MutationSnapshot {
-        let composerQueueOverrideRaw: String?
-        let requiresReply: Bool
-        let messageDraft: Draft?
-        let draft: Draft?
-        let draftStatus: DraftStatus?
-        let draftMessage: Message?
-        let mailboxDraftAccountID: UUID?
-        let replyText: String?
-        let confidence: Double?
-        let citationsJSON: String?
-        let gapsJSON: String?
-        let deliverablesJSON: String?
-        let replyAttachmentPathsJSON: String?
-        let interviewStateJSON: String?
-        let decisionResearchOverlayJSON: String?
-        let decisionHistoryJSON: String?
-        let sourcesJSON: String?
-        let sourceContextTokenCount: Int?
-        let sourceContextTokenLimit: Int?
-        let sourceContextFitJSON: String?
-        let sourceContextMeasurementRequestedAt: Date?
-        let automaticSourceResearchStateRaw: String?
-        let automaticSourceResearchInputFingerprint: String?
-        let sourcesCuratedAt: Date?
-        let sourceThreadCoverageJSON: String?
-        let sourceThreadCount: Int?
-        let sourceExemplarCount: Int?
-        let styleMatch: Double?
-        let stageRaw: String?
-        let bodyHTML: String?
-        let inlinePhotosJSON: String?
-        let pendingInstruction: String?
-        let draftingInstruction: String?
-        let appliedRuleIDsJSON: String?
-        let personalizationJSON: String?
-        let modelVersion: String?
-        let revisions: [DraftRevision]
-
-        init(message: Message, draft: Draft?) {
-            composerQueueOverrideRaw = message.composerQueueOverrideRaw
-            requiresReply = message.requiresReply
-            messageDraft = message.draft
-            self.draft = draft
-            draftStatus = draft?.status
-            draftMessage = draft?.message
-            mailboxDraftAccountID = draft?.mailboxDraftAccountID
-            replyText = draft?.replyText
-            confidence = draft?.confidence
-            citationsJSON = draft?.citationsJSON
-            gapsJSON = draft?.gapsJSON
-            deliverablesJSON = draft?.deliverablesJSON
-            replyAttachmentPathsJSON = draft?.replyAttachmentPathsJSON
-            interviewStateJSON = draft?.interviewStateJSON
-            decisionResearchOverlayJSON = draft?.decisionResearchOverlayJSON
-            decisionHistoryJSON = draft?.decisionHistoryJSON
-            sourcesJSON = draft?.sourcesJSON
-            sourceContextTokenCount = draft?.sourceContextTokenCount
-            sourceContextTokenLimit = draft?.sourceContextTokenLimit
-            sourceContextFitJSON = draft?.sourceContextFitJSON
-            sourceContextMeasurementRequestedAt = draft?.sourceContextMeasurementRequestedAt
-            automaticSourceResearchStateRaw = draft?.automaticSourceResearchStateRaw
-            automaticSourceResearchInputFingerprint = draft?.automaticSourceResearchInputFingerprint
-            sourcesCuratedAt = draft?.sourcesCuratedAt
-            sourceThreadCoverageJSON = draft?.sourceThreadCoverageJSON
-            sourceThreadCount = draft?.sourceThreadCount
-            sourceExemplarCount = draft?.sourceExemplarCount
-            styleMatch = draft?.styleMatch
-            stageRaw = draft?.stageRaw
-            bodyHTML = draft?.bodyHTML
-            inlinePhotosJSON = draft?.inlinePhotosJSON
-            pendingInstruction = draft?.pendingInstruction
-            draftingInstruction = draft?.draftingInstruction
-            appliedRuleIDsJSON = draft?.appliedRuleIDsJSON
-            personalizationJSON = draft?.personalizationJSON
-            modelVersion = draft?.modelVersion
-            revisions = draft?.orderedRevisions ?? []
-        }
-
-        func restore(message: Message, context: ModelContext) {
-            message.composerQueueOverrideRaw = composerQueueOverrideRaw
-            message.requiresReply = requiresReply
-            message.draft = messageDraft
-            guard let draft,
-                  let draftStatus,
-                  let replyText,
-                  let confidence,
-                  let sourceThreadCount,
-                  let sourceExemplarCount,
-                  let styleMatch
-            else { return }
-            ComposerDiscardTransaction.reinsertIfDeleted(draft, context: context)
-            for revision in revisions {
-                ComposerDiscardTransaction.reinsertIfDeleted(revision, context: context)
-            }
-            draft.status = draftStatus
-            draft.message = draftMessage
-            draft.mailboxDraftAccountID = mailboxDraftAccountID
-            draft.replyText = replyText
-            draft.confidence = confidence
-            draft.citationsJSON = citationsJSON
-            draft.gapsJSON = gapsJSON
-            draft.deliverablesJSON = deliverablesJSON
-            draft.replyAttachmentPathsJSON = replyAttachmentPathsJSON
-            draft.interviewStateJSON = interviewStateJSON
-            draft.decisionResearchOverlayJSON = decisionResearchOverlayJSON
-            draft.decisionHistoryJSON = decisionHistoryJSON
-            draft.sourcesJSON = sourcesJSON
-            draft.sourceContextTokenCount = sourceContextTokenCount
-            draft.sourceContextTokenLimit = sourceContextTokenLimit
-            draft.sourceContextFitJSON = sourceContextFitJSON
-            draft.sourceContextMeasurementRequestedAt = sourceContextMeasurementRequestedAt
-            draft.automaticSourceResearchStateRaw = automaticSourceResearchStateRaw
-            draft.automaticSourceResearchInputFingerprint = automaticSourceResearchInputFingerprint
-            draft.sourcesCuratedAt = sourcesCuratedAt
-            draft.sourceThreadCoverageJSON = sourceThreadCoverageJSON
-            draft.sourceThreadCount = sourceThreadCount
-            draft.sourceExemplarCount = sourceExemplarCount
-            draft.styleMatch = styleMatch
-            draft.stageRaw = stageRaw
-            draft.bodyHTML = bodyHTML
-            draft.inlinePhotosJSON = inlinePhotosJSON
-            draft.pendingInstruction = pendingInstruction
-            draft.draftingInstruction = draftingInstruction
-            draft.appliedRuleIDsJSON = appliedRuleIDsJSON
-            draft.personalizationJSON = personalizationJSON
-            draft.modelVersion = modelVersion
-            draft.revisions = revisions
-            for revision in revisions {
-                revision.draft = draft
-            }
-        }
     }
 }

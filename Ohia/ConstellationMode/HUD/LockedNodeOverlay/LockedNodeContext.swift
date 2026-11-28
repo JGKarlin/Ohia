@@ -31,7 +31,7 @@ struct LockedAttachmentSummary: Sendable, Equatable, Identifiable {
     let visualExtractionFailureReason: String?
     /// Vision-derived paragraph describing an image attachment, produced by
     /// `VisualAttachmentExtractionWorker` from `VNClassifyImageRequest` +
-    /// `VNRecognizeTextRequest` + Apple Foundation Models. `nil` when the
+    /// text recognition in `OhiaPDFParser.xpc` + Apple Foundation Models. `nil` when the
     /// attachment isn't image-like, or when the visual extraction worker
     /// hasn't visited it yet. Used by the locked-overlay attachment pane to
     /// show "what's in this image" in the collapsed brief.
@@ -87,6 +87,12 @@ struct LockedAttachmentSummary: Sendable, Equatable, Identifiable {
     /// Capture fact for photos and videos: `Oct 6, 2026, 6:50 AM · Serengeti
     /// National Park, Tanzania` (wall-clock time where it was recorded).
     var captureLine: String? = nil
+    /// When the text or visual extraction is tried again, after an attempt
+    /// that could not read the text for now
+    /// (`AttachmentExtractionRetryPolicy.scheduledRetry` /
+    /// `scheduledVisualRetry`). Nil when no retry is scheduled.
+    var textRetryAt: Date? = nil
+    var visualRetryAt: Date? = nil
 }
 
 extension LockedAttachmentSummary {
@@ -132,7 +138,9 @@ extension LockedAttachmentSummary {
             remoteExpiresAt: attachment.remoteExpiresAt,
             captureLine: AttachmentCaptureMetadata
                 .decode(attachment.captureMetadataJSON)?
-                .readerLine(locale: .autoupdatingCurrent)
+                .readerLine(locale: .autoupdatingCurrent),
+            textRetryAt: AttachmentExtractionRetryPolicy.scheduledRetry(of: attachment),
+            visualRetryAt: AttachmentExtractionRetryPolicy.scheduledVisualRetry(of: attachment)
         )
     }
 }

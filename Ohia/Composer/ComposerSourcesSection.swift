@@ -15,6 +15,7 @@ import UniformTypeIdentifiers
 import OhiaCore
 import OhiaIngest
 import OhiaML
+import OhiaPDFParsing
 import OhiaScheduler
 
 /// Shared hover disclosure behavior for Composer evidence sections.
@@ -381,6 +382,15 @@ enum ComposerSourceContextMeasurementScheduler {
             && ComposerWriterWindowUsage.currentCount(draft.sourceContextTokenCount,
                 fitJSON: draft.sourceContextFitJSON) == nil
         guard !measuredForWriter || undecodableFit else { return }
+        // Pending edits commit first, so when this request's save fails,
+        // `rollback()` reverts only the request, not edits made since the
+        // last save, such as a recipient chip awaiting its autosave.
+        do {
+            try context.save()
+        } catch {
+            print("[Ohia] Composer source-context measurement: pending edits did not save: \(String(reflecting: type(of: error)))")
+            return
+        }
         // The legacy count was against the old allowance; the writer budget
         // shows while the new measurement runs.
         draft.sourceContextTokenCount = nil
@@ -1886,6 +1896,15 @@ struct ComposerSourcesSection<Host: ComposerSourceHost>: View {
                 return false
             }
         }
+        // Pending edits commit first, so when this change's save fails,
+        // `rollback()` reverts only the change, not edits made since the
+        // last save.
+        do {
+            try modelContext.save()
+        } catch {
+            print("[Ohia] Composer source change: pending edits did not save: \(String(reflecting: type(of: error)))")
+            return false
+        }
         guard ComposerSourceMutationPersistence.prepareForPersistence(
             draft: draft,
             original: original,
@@ -3276,7 +3295,8 @@ enum ComposerSourceText {
     /// access; failures still add the source with an explicit marker. Plain
     /// and PDF extraction run detached; `NSAttributedString` imports stay on
     /// main because the HTML importer is main-thread-only (and RTF / DOCX
-    /// imports are fast).
+    /// imports are fast). A PDF waits on `OhiaPDFParser.xpc`, so its parse
+    /// runs off Swift's task threads (`PDFParserBlockingCall`).
     static func extractFileText(at url: URL, limit: Int = 4000) async -> String {
         let failure = "(content could not be extracted)"
         let text: String?
@@ -3286,9 +3306,9 @@ enum ComposerSourceText {
                 plainText(at: url)
             }.value
         case "pdf":
-            text = await Task.detached(priority: .userInitiated) {
+            text = await PDFParserBlockingCall.run(priority: .userInitiated) {
                 pdfText(at: url)
-            }.value
+            }
         case "rtf", "rtfd", "docx", "doc", "odt", "html", "htm", "webarchive":
             text = attributedText(at: url)
         default:
@@ -3297,9 +3317,9 @@ enum ComposerSourceText {
             if let rich = attributedText(at: url) {
                 text = rich
             } else {
-                text = await Task.detached(priority: .userInitiated) {
+                text = await PDFParserBlockingCall.run(priority: .userInitiated) {
                     pdfText(at: url) ?? plainText(at: url)
-                }.value
+                }
             }
         }
         guard let trimmed = text?.trimmingCharacters(in: .whitespacesAndNewlines),
